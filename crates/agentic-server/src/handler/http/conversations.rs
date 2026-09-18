@@ -3,15 +3,21 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 
 use agentic_core::storage::InOutItem;
-use agentic_core::types::{ConversationResponse, CreateConversationRequest, DeletedResponse, UpdateConversationRequest};
+use agentic_core::types::{
+    ConversationResponse, CreateConversationRequest, DeletedResponse, UpdateConversationRequest,
+};
 
 use super::super::common::{error_response, extract_json, read_bytes};
 use crate::app::AppState;
 
 /// Extract tenant ID from authenticated principal in request extensions.
+///
+/// Returns Result to support future authentication error handling.
+#[allow(clippy::unnecessary_wraps, clippy::result_large_err)]
 fn extract_tenant_id(_req: &Request) -> Result<String, Response> {
     // For now, return a placeholder until we wire up authentication
     // In production, this would extract from the AuthenticatedPrincipal extension
+    // and return Err(response) for authentication failures
     Ok("default_tenant".to_string())
 }
 
@@ -104,7 +110,13 @@ pub async fn retrieve_conversation(
         Err(err) => return err,
     };
 
-    match state.exec_ctx.conv_handler.store().retrieve(&tenant_id, &conversation_id).await {
+    match state
+        .exec_ctx
+        .conv_handler
+        .store()
+        .retrieve(&tenant_id, &conversation_id)
+        .await
+    {
         Ok(data) => {
             let metadata = data
                 .metadata
@@ -216,7 +228,13 @@ pub async fn delete_conversation(
         Err(err) => return err,
     };
 
-    match state.exec_ctx.conv_handler.store().delete(&tenant_id, &conversation_id).await {
+    match state
+        .exec_ctx
+        .conv_handler
+        .store()
+        .delete(&tenant_id, &conversation_id)
+        .await
+    {
         Ok(()) => {
             let response = DeletedResponse::conversation(conversation_id);
             axum::Json(response).into_response()

@@ -215,18 +215,12 @@ pub async fn create_with_metadata(
 ///
 /// # Errors
 /// Returns `DbResult::Err` if the database query fails.
-pub async fn get_by_tenant(
-    pool: &DbPool,
-    tenant_id: &str,
-    conversation_id: &str,
-) -> DbResult<Option<Conversation>> {
-    sqlx::query_as::<_, Conversation>(
-        "SELECT * FROM conversations WHERE id = $1 AND tenant_id = $2"
-    )
-    .bind(conversation_id)
-    .bind(tenant_id)
-    .fetch_optional(pool)
-    .await
+pub async fn get_by_tenant(pool: &DbPool, tenant_id: &str, conversation_id: &str) -> DbResult<Option<Conversation>> {
+    sqlx::query_as::<_, Conversation>("SELECT * FROM conversations WHERE id = $1 AND tenant_id = $2")
+        .bind(conversation_id)
+        .bind(tenant_id)
+        .fetch_optional(pool)
+        .await
 }
 
 /// Update conversation metadata.
@@ -242,7 +236,7 @@ pub async fn update_metadata(
     sqlx::query_as::<_, Conversation>(
         "UPDATE conversations SET metadata = $1 \
          WHERE id = $2 AND tenant_id = $3 \
-         RETURNING *"
+         RETURNING *",
     )
     .bind(metadata)
     .bind(conversation_id)
@@ -255,18 +249,12 @@ pub async fn update_metadata(
 ///
 /// # Errors
 /// Returns `DbResult::Err` if the database query fails.
-pub async fn delete(
-    pool: &DbPool,
-    tenant_id: &str,
-    conversation_id: &str,
-) -> DbResult<u64> {
-    let result = sqlx::query(
-        "DELETE FROM conversations WHERE id = $1 AND tenant_id = $2"
-    )
-    .bind(conversation_id)
-    .bind(tenant_id)
-    .execute(pool)
-    .await?;
+pub async fn delete(pool: &DbPool, tenant_id: &str, conversation_id: &str) -> DbResult<u64> {
+    let result = sqlx::query("DELETE FROM conversations WHERE id = $1 AND tenant_id = $2")
+        .bind(conversation_id)
+        .bind(tenant_id)
+        .execute(pool)
+        .await?;
     Ok(result.rows_affected())
 }
 

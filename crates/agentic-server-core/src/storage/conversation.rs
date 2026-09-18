@@ -252,16 +252,10 @@ impl ConversationStore {
 
         let pool = self.pool()?;
         let conversation_id = uuid7_str("conv_");
-        let metadata_str = metadata
-            .map(|m| serialize_to_string(&m))
-            .transpose()?;
+        let metadata_str = metadata.map(|m| serialize_to_string(&m)).transpose()?;
 
-        let row = conversation::create_with_metadata(
-            pool,
-            &conversation_id,
-            tenant_id,
-            metadata_str.as_deref(),
-        ).await?;
+        let row =
+            conversation::create_with_metadata(pool, &conversation_id, tenant_id, metadata_str.as_deref()).await?;
 
         // If initial_items provided, persist them
         if !initial_items.is_empty() {
@@ -287,11 +281,7 @@ impl ConversationStore {
     /// # Errors
     ///
     /// Returns error if conversation not found or database query fails.
-    pub async fn retrieve(
-        &self,
-        tenant_id: &str,
-        conversation_id: &str,
-    ) -> StoreResult<ConversationData> {
+    pub async fn retrieve(&self, tenant_id: &str, conversation_id: &str) -> StoreResult<ConversationData> {
         let pool = self.pool()?;
         let row = conversation::get_by_tenant(pool, tenant_id, conversation_id)
             .await?
@@ -326,11 +316,7 @@ impl ConversationStore {
     /// # Errors
     ///
     /// Returns error if conversation not found or database operation fails.
-    pub async fn delete(
-        &self,
-        tenant_id: &str,
-        conversation_id: &str,
-    ) -> StoreResult<()> {
+    pub async fn delete(&self, tenant_id: &str, conversation_id: &str) -> StoreResult<()> {
         let pool = self.pool()?;
         let rows_affected = conversation::delete(pool, tenant_id, conversation_id).await?;
         if rows_affected == 0 {

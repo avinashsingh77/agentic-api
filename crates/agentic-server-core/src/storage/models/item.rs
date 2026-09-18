@@ -274,21 +274,22 @@ pub async fn create_items_for_conversation(
     let mut tx = pool.begin().await?;
 
     // Get the current max sequence for this conversation
-    let max_seq: Option<i64> = sqlx::query_scalar(
-        "SELECT MAX(seq) FROM items WHERE conversation_id = $1"
-    )
-    .bind(conversation_id)
-    .fetch_one(&mut *tx)
-    .await?;
+    let max_seq: Option<i64> = sqlx::query_scalar("SELECT MAX(seq) FROM items WHERE conversation_id = $1")
+        .bind(conversation_id)
+        .fetch_one(&mut *tx)
+        .await?;
 
     let start_seq = max_seq.map_or(1, |s| s + 1);
     let mut created_items = Vec::new();
 
     for (idx, (item_id, data)) in items.into_iter().enumerate() {
-        let seq = start_seq + idx as i64;
+        // Cast is safe: practical item counts are bounded by available memory
+        // and request size limits, far below i64::MAX
+        #[allow(clippy::cast_possible_wrap)]
+        let seq = start_seq + (idx as i64);
         let item = sqlx::query_as::<_, Item>(
             "INSERT INTO items (id, data, created_at, conversation_id, tenant_id, seq) \
-             VALUES ($1, $2, $3, $4, $5, $6) RETURNING *"
+             VALUES ($1, $2, $3, $4, $5, $6) RETURNING *",
         )
         .bind(&item_id)
         .bind(&data)
@@ -322,7 +323,7 @@ pub async fn list_items(
             "SELECT * FROM items \
              WHERE conversation_id = $1 AND tenant_id = $2 AND id > $3 \
              ORDER BY seq ASC, id ASC \
-             LIMIT $4"
+             LIMIT $4",
         )
         .bind(conversation_id)
         .bind(tenant_id)
@@ -335,7 +336,7 @@ pub async fn list_items(
             "SELECT * FROM items \
              WHERE conversation_id = $1 AND tenant_id = $2 \
              ORDER BY seq ASC, id ASC \
-             LIMIT $3"
+             LIMIT $3",
         )
         .bind(conversation_id)
         .bind(tenant_id)
@@ -349,36 +350,24 @@ pub async fn list_items(
 ///
 /// # Errors
 /// Returns `DbResult::Err` if the database query fails.
-pub async fn get_item_by_tenant(
-    pool: &DbPool,
-    tenant_id: &str,
-    item_id: &str,
-) -> DbResult<Option<Item>> {
-    sqlx::query_as::<_, Item>(
-        "SELECT * FROM items WHERE id = $1 AND tenant_id = $2"
-    )
-    .bind(item_id)
-    .bind(tenant_id)
-    .fetch_optional(pool)
-    .await
+pub async fn get_item_by_tenant(pool: &DbPool, tenant_id: &str, item_id: &str) -> DbResult<Option<Item>> {
+    sqlx::query_as::<_, Item>("SELECT * FROM items WHERE id = $1 AND tenant_id = $2")
+        .bind(item_id)
+        .bind(tenant_id)
+        .fetch_optional(pool)
+        .await
 }
 
 /// Delete an item by ID with tenant scoping.
 ///
 /// # Errors
 /// Returns `DbResult::Err` if the database query fails.
-pub async fn delete_item(
-    pool: &DbPool,
-    tenant_id: &str,
-    item_id: &str,
-) -> DbResult<u64> {
-    let result = sqlx::query(
-        "DELETE FROM items WHERE id = $1 AND tenant_id = $2"
-    )
-    .bind(item_id)
-    .bind(tenant_id)
-    .execute(pool)
-    .await?;
+pub async fn delete_item(pool: &DbPool, tenant_id: &str, item_id: &str) -> DbResult<u64> {
+    let result = sqlx::query("DELETE FROM items WHERE id = $1 AND tenant_id = $2")
+        .bind(item_id)
+        .bind(tenant_id)
+        .execute(pool)
+        .await?;
     Ok(result.rows_affected())
 }
 

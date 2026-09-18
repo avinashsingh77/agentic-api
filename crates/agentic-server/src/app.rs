@@ -286,12 +286,17 @@ pub fn build_router_with_auth(
     let protected_routes = Router::new()
         .route("/v1/conversations", post(create_conversation))
         .route(
-            "/v1/conversations/:conversation_id",
-            get(retrieve_conversation).post(update_conversation).delete(delete_conversation),
+            "/v1/conversations/{conversation_id}",
+            get(retrieve_conversation)
+                .post(update_conversation)
+                .delete(delete_conversation),
         )
-        .route("/v1/conversations/:conversation_id/items", post(create_item).get(list_items))
         .route(
-            "/v1/conversations/:conversation_id/items/:item_id",
+            "/v1/conversations/{conversation_id}/items",
+            post(create_item).get(list_items),
+        )
+        .route(
+            "/v1/conversations/{conversation_id}/items/{item_id}",
             get(retrieve_item).delete(delete_item),
         )
         .route("/v1/models", get(models))

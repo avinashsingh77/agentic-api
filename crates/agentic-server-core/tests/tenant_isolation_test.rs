@@ -49,11 +49,7 @@ async fn test_conversation_metadata_update_with_tenant() {
 
     // Create conversation
     let conv = store
-        .create_with_metadata_and_items(
-            Some("tenant_a"),
-            Some(json!({"status": "draft"})),
-            vec![],
-        )
+        .create_with_metadata_and_items(Some("tenant_a"), Some(json!({"status": "draft"})), vec![])
         .await
         .expect("create failed");
 
@@ -85,21 +81,23 @@ async fn test_conversation_delete_with_tenant_scoping() {
 
     // Create conversation for tenant A
     let conv = store
-        .create_with_metadata_and_items(
-            Some("tenant_a"),
-            Some(json!({"temp": true})),
-            vec![],
-        )
+        .create_with_metadata_and_items(Some("tenant_a"), Some(json!({"temp": true})), vec![])
         .await
         .expect("create failed");
 
     // Tenant B cannot delete tenant A's conversation
     let delete_result = store.delete("tenant_b", &conv.conversation_id).await;
-    assert!(delete_result.is_err(), "tenant_b should NOT delete tenant_a's conversation");
+    assert!(
+        delete_result.is_err(),
+        "tenant_b should NOT delete tenant_a's conversation"
+    );
 
     // Verify conversation still exists for tenant A
     let still_exists = store.retrieve("tenant_a", &conv.conversation_id).await;
-    assert!(still_exists.is_ok(), "conversation should still exist after failed delete");
+    assert!(
+        still_exists.is_ok(),
+        "conversation should still exist after failed delete"
+    );
 
     // Tenant A can delete their own conversation
     let delete_result = store.delete("tenant_a", &conv.conversation_id).await;
@@ -127,21 +125,14 @@ async fn test_conversation_create_with_initial_items() {
 
     // Create conversation with initial items
     let conv = store
-        .create_with_metadata_and_items(
-            Some("tenant_a"),
-            Some(json!({"test": "initial_items"})),
-            initial_items,
-        )
+        .create_with_metadata_and_items(Some("tenant_a"), Some(json!({"test": "initial_items"})), initial_items)
         .await
         .expect("create with items failed");
 
     assert!(conv.conversation_id.starts_with("conv_"));
 
     // Rehydrate and verify items are present
-    let items = store
-        .rehydrate(&conv.conversation_id)
-        .await
-        .expect("rehydrate failed");
+    let items = store.rehydrate(&conv.conversation_id).await.expect("rehydrate failed");
 
     assert_eq!(items.len(), 1, "should have 1 initial item");
 }

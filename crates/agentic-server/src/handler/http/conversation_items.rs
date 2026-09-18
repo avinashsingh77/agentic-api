@@ -11,9 +11,13 @@ use super::super::common::{error_response, extract_json, read_bytes};
 use crate::app::AppState;
 
 /// Extract tenant ID from authenticated principal in request extensions.
+///
+/// Returns Result to support future authentication error handling.
+#[allow(clippy::unnecessary_wraps, clippy::result_large_err)]
 fn extract_tenant_id(_req: &Request) -> Result<String, Response> {
     // For now, return a placeholder until we wire up authentication
     // In production, this would extract from the AuthenticatedPrincipal extension
+    // and return Err(response) for authentication failures
     Ok("default_tenant".to_string())
 }
 
@@ -49,11 +53,7 @@ fn default_limit() -> i64 {
     security(("bearer_auth" = [])),
     tag = "conversations",
 ))]
-pub async fn create_item(
-    State(state): State<AppState>,
-    Path(conversation_id): Path<String>,
-    req: Request,
-) -> Response {
+pub async fn create_item(State(state): State<AppState>, Path(conversation_id): Path<String>, req: Request) -> Response {
     let tenant_id = match extract_tenant_id(&req) {
         Ok(id) => id,
         Err(err) => return err,
@@ -71,7 +71,13 @@ pub async fn create_item(
     };
 
     // Verify conversation exists and belongs to tenant
-    if let Err(e) = state.exec_ctx.conv_handler.store().retrieve(&tenant_id, &conversation_id).await {
+    if let Err(e) = state
+        .exec_ctx
+        .conv_handler
+        .store()
+        .retrieve(&tenant_id, &conversation_id)
+        .await
+    {
         return match e {
             agentic_core::storage::StorageError::NotFound { .. } => {
                 error_response(StatusCode::NOT_FOUND, "not_found", "Conversation not found")
@@ -101,7 +107,7 @@ pub async fn create_item(
                 StatusCode::BAD_REQUEST,
                 "serialization_error",
                 &format!("Failed to serialize item: {e}"),
-            )
+            );
         }
     };
 
@@ -112,19 +118,28 @@ pub async fn create_item(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "storage_error",
                 &format!("Storage not configured: {e}"),
-            )
+            );
         }
     };
 
-    match item::create_items_for_conversation(pool, &tenant_id, &conversation_id, vec![(item_id.clone(), item_data_str)])
-        .await
+    match item::create_items_for_conversation(
+        pool,
+        &tenant_id,
+        &conversation_id,
+        vec![(item_id.clone(), item_data_str)],
+    )
+    .await
     {
         Ok(mut items) => {
             if let Some(created_item) = items.pop() {
                 let response = ItemResponse::new(created_item.id, created_item.created_at, request.item);
                 axum::Json(response).into_response()
             } else {
-                error_response(StatusCode::INTERNAL_SERVER_ERROR, "storage_error", "Failed to create item")
+                error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "storage_error",
+                    "Failed to create item",
+                )
             }
         }
         Err(e) => error_response(
@@ -162,7 +177,13 @@ pub async fn list_items(
     };
 
     // Verify conversation exists and belongs to tenant
-    if let Err(e) = state.exec_ctx.conv_handler.store().retrieve(&tenant_id, &conversation_id).await {
+    if let Err(e) = state
+        .exec_ctx
+        .conv_handler
+        .store()
+        .retrieve(&tenant_id, &conversation_id)
+        .await
+    {
         return match e {
             agentic_core::storage::StorageError::NotFound { .. } => {
                 error_response(StatusCode::NOT_FOUND, "not_found", "Conversation not found")
@@ -184,14 +205,16 @@ pub async fn list_items(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "storage_error",
                 &format!("Storage not configured: {e}"),
-            )
+            );
         }
     };
 
     // Fetch limit + 1 to determine if there are more items
     match item::list_items(pool, &tenant_id, &conversation_id, limit + 1, query.after.as_deref()).await {
         Ok(mut items) => {
-            let has_more = items.len() as i64 > limit;
+            // Safe: limit is clamped to [1, 100], far below usize range
+            #[allow(clippy::cast_possible_wrap)]
+            let has_more = (items.len() as i64) > limit;
             if has_more {
                 items.pop(); // Remove the extra item
             }
@@ -199,12 +222,12 @@ pub async fn list_items(
             let item_responses: Vec<ItemResponse> = items
                 .into_iter()
                 .filter_map(|db_item| {
-                    let conversation_item = db_item.as_inout().and_then(|inout| match inout {
+                    let conversation_item = db_item.as_inout().map(|inout| match inout {
                         agentic_core::storage::InOutItem::Input(input) => {
-                            Some(agentic_core::types::ConversationItem::Input(input))
+                            agentic_core::types::ConversationItem::Input(input)
                         }
                         agentic_core::storage::InOutItem::Output(output) => {
-                            Some(agentic_core::types::ConversationItem::Output(output))
+                            agentic_core::types::ConversationItem::Output(output)
                         }
                     })?;
 
@@ -249,7 +272,13 @@ pub async fn retrieve_item(
     };
 
     // Verify conversation exists and belongs to tenant
-    if let Err(e) = state.exec_ctx.conv_handler.store().retrieve(&tenant_id, &conversation_id).await {
+    if let Err(e) = state
+        .exec_ctx
+        .conv_handler
+        .store()
+        .retrieve(&tenant_id, &conversation_id)
+        .await
+    {
         return match e {
             agentic_core::storage::StorageError::NotFound { .. } => {
                 error_response(StatusCode::NOT_FOUND, "not_found", "Conversation not found")
@@ -269,7 +298,7 @@ pub async fn retrieve_item(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "storage_error",
                 &format!("Storage not configured: {e}"),
-            )
+            );
         }
     };
 
@@ -277,7 +306,11 @@ pub async fn retrieve_item(
         Ok(Some(db_item)) => {
             // Verify item belongs to the specified conversation
             if db_item.conversation_id.as_deref() != Some(&conversation_id) {
-                return error_response(StatusCode::NOT_FOUND, "not_found", "Item not found in this conversation");
+                return error_response(
+                    StatusCode::NOT_FOUND,
+                    "not_found",
+                    "Item not found in this conversation",
+                );
             }
 
             if let Some(inout_item) = db_item.as_inout() {
@@ -293,7 +326,11 @@ pub async fn retrieve_item(
                 let response = ItemResponse::new(db_item.id, db_item.created_at, conversation_item);
                 axum::Json(response).into_response()
             } else {
-                error_response(StatusCode::INTERNAL_SERVER_ERROR, "serialization_error", "Failed to deserialize item")
+                error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "serialization_error",
+                    "Failed to deserialize item",
+                )
             }
         }
         Ok(None) => error_response(StatusCode::NOT_FOUND, "not_found", "Item not found"),
@@ -331,7 +368,13 @@ pub async fn delete_item(
     };
 
     // Verify conversation exists and belongs to tenant
-    if let Err(e) = state.exec_ctx.conv_handler.store().retrieve(&tenant_id, &conversation_id).await {
+    if let Err(e) = state
+        .exec_ctx
+        .conv_handler
+        .store()
+        .retrieve(&tenant_id, &conversation_id)
+        .await
+    {
         return match e {
             agentic_core::storage::StorageError::NotFound { .. } => {
                 error_response(StatusCode::NOT_FOUND, "not_found", "Conversation not found")
@@ -351,7 +394,7 @@ pub async fn delete_item(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "storage_error",
                 &format!("Storage not configured: {e}"),
-            )
+            );
         }
     };
 
@@ -359,7 +402,11 @@ pub async fn delete_item(
     match item::get_item_by_tenant(pool, &tenant_id, &item_id).await {
         Ok(Some(db_item)) => {
             if db_item.conversation_id.as_deref() != Some(&conversation_id) {
-                return error_response(StatusCode::NOT_FOUND, "not_found", "Item not found in this conversation");
+                return error_response(
+                    StatusCode::NOT_FOUND,
+                    "not_found",
+                    "Item not found in this conversation",
+                );
             }
         }
         Ok(None) => return error_response(StatusCode::NOT_FOUND, "not_found", "Item not found"),
@@ -368,7 +415,7 @@ pub async fn delete_item(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "storage_error",
                 &format!("Failed to verify item: {e}"),
-            )
+            );
         }
     }
 

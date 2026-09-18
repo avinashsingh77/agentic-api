@@ -49,7 +49,6 @@ pub struct ConversationResponse {
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct CreateItemRequest {
     /// The item to add (input or output).
-    #[serde(flatten)]
     pub item: ConversationItem,
 }
 
@@ -88,8 +87,7 @@ pub struct ItemResponse {
     /// Creation timestamp as Unix timestamp in seconds.
     pub created_at: i64,
 
-    /// The item content.
-    #[serde(flatten)]
+    /// The item content (input or output).
     pub item: ConversationItem,
 }
 
@@ -190,11 +188,7 @@ mod tests {
 
     #[test]
     fn test_conversation_response_new() {
-        let resp = ConversationResponse::new(
-            "conv_123".to_string(),
-            1704067200,
-            Some(json!({"user": "alice"})),
-        );
+        let resp = ConversationResponse::new("conv_123".to_string(), 1704067200, Some(json!({"user": "alice"})));
 
         assert_eq!(resp.id, "conv_123");
         assert_eq!(resp.object, "conversation");
@@ -273,5 +267,68 @@ mod tests {
         let json = serde_json::to_string(&req).expect("serialize");
         assert!(json.contains("status"));
         assert!(json.contains("active"));
+    }
+
+    #[test]
+    fn test_item_response_serialization_nested() {
+        // Use a simple unknown item for serialization test
+        let item = ConversationItem::Input(InputItem::Unknown);
+
+        let resp = ItemResponse::new("item_123".to_string(), 1704067200, item);
+        let json_value = serde_json::to_value(&resp).expect("serialize");
+
+        // Should have nested structure, not flattened
+        assert_eq!(json_value["id"], "item_123");
+        assert_eq!(json_value["object"], "conversation.item");
+        assert_eq!(json_value["created_at"], 1704067200);
+        assert!(json_value["item"].is_object());
+    }
+
+    #[test]
+    fn test_create_item_request_deserialization_nested() {
+        let json_str = r#"{
+            "item": {
+                "type": "message",
+                "role": "user",
+                "content": "Hello"
+            }
+        }"#;
+
+        let req: CreateItemRequest = serde_json::from_str(json_str).expect("deserialize");
+
+        // Verify it's wrapped in an item field, not flattened
+        match req.item {
+            ConversationItem::Input(_) => {
+                // Successfully deserialized with nested structure
+            }
+            _ => panic!("Expected InputItem"),
+        }
+    }
+
+    #[test]
+    fn test_item_response_json_structure() {
+        // Test that ItemResponse produces the expected JSON structure
+        let json_str = r#"{
+            "id": "item_123",
+            "object": "conversation.item",
+            "created_at": 1704067200,
+            "item": {
+                "type": "message",
+                "role": "assistant",
+                "content": "Test"
+            }
+        }"#;
+
+        let resp: ItemResponse = serde_json::from_str(json_str).expect("deserialize");
+        assert_eq!(resp.id, "item_123");
+        assert_eq!(resp.object, "conversation.item");
+        assert_eq!(resp.created_at, 1704067200);
+
+        // Re-serialize and verify structure is preserved
+        let json_value = serde_json::to_value(&resp).expect("serialize");
+        assert!(
+            json_value.get("item").is_some(),
+            "item field must be present and not flattened"
+        );
     }
 }
