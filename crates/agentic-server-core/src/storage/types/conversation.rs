@@ -136,6 +136,7 @@ mod tests {
             conversation_id: "conv_debug".to_string(),
             metadata: None,
             created_at: 1_704_067_200,
+            tenant_id: None,
         };
 
         let debug_str = format!("{data:?}");
@@ -149,6 +150,7 @@ mod tests {
             conversation_id: "conv_bidir".to_string(),
             metadata: None,
             created_at: 1_706_790_600,
+            tenant_id: None,
         };
 
         let db_row: StorageDbConversation = original.clone().into();

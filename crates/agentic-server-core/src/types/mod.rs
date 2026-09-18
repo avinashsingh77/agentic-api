@@ -1,3 +1,4 @@
+pub mod conversations;
 pub mod event;
 pub mod io;
 pub mod messages;
@@ -18,6 +19,10 @@ pub use io::{
 pub use request_response::{
     CompactRequest, CompactedResponse, ContextManagement, IncompleteDetails, ReasoningConfig, RequestPayload,
     ResponsePayload, ResponseTextConfig, ResponseTextFormat, UpstreamRequest, UpstreamTool,
+};
+pub use conversations::{
+    ConversationItem, ConversationResponse, CreateConversationRequest, CreateItemRequest, DeletedResponse,
+    ItemResponse, ListItemsResponse, UpdateConversationRequest,
 };
 pub use tools::{
     CodeInterpreterToolParam, CodexNamespaceMember, CodexNamespaceToolParam, CustomToolParam, EmptyToolNameError,
