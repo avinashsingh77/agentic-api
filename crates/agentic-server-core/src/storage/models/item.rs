@@ -35,6 +35,9 @@ pub struct Item {
 
     /// Optional sequence number within conversation.
     pub seq: Option<i64>,
+
+    /// Tenant identifier for multi-tenancy isolation.
+    pub tenant_id: Option<String>,
 }
 
 impl Item {
@@ -252,6 +255,131 @@ pub async fn last_conversation_sequence_in_tx(
         .bind(conversation_id)
         .fetch_one(&mut **tx)
         .await
+}
+
+/// Create items for a conversation with tenant scoping and sequence numbers.
+///
+/// # Errors
+/// Returns `DbResult::Err` if the database insertion fails.
+pub async fn create_items_for_conversation(
+    pool: &DbPool,
+    tenant_id: &str,
+    conversation_id: &str,
+    items: Vec<(String, String)>, // (item_id, data)
+) -> DbResult<Vec<Item>> {
+    if items.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut tx = pool.begin().await?;
+
+    // Get the current max sequence for this conversation
+    let max_seq: Option<i64> = sqlx::query_scalar(
+        "SELECT MAX(seq) FROM items WHERE conversation_id = $1"
+    )
+    .bind(conversation_id)
+    .fetch_one(&mut *tx)
+    .await?;
+
+    let start_seq = max_seq.map_or(1, |s| s + 1);
+    let mut created_items = Vec::new();
+
+    for (idx, (item_id, data)) in items.into_iter().enumerate() {
+        let seq = start_seq + idx as i64;
+        let item = sqlx::query_as::<_, Item>(
+            "INSERT INTO items (id, data, created_at, conversation_id, tenant_id, seq) \
+             VALUES ($1, $2, $3, $4, $5, $6) RETURNING *"
+        )
+        .bind(&item_id)
+        .bind(&data)
+        .bind(utcnow_str())
+        .bind(conversation_id)
+        .bind(tenant_id)
+        .bind(seq)
+        .fetch_one(&mut *tx)
+        .await?;
+
+        created_items.push(item);
+    }
+
+    tx.commit().await?;
+    Ok(created_items)
+}
+
+/// List items for a conversation with pagination.
+///
+/// # Errors
+/// Returns `DbResult::Err` if the database query fails.
+pub async fn list_items(
+    pool: &DbPool,
+    tenant_id: &str,
+    conversation_id: &str,
+    limit: i64,
+    after: Option<&str>,
+) -> DbResult<Vec<Item>> {
+    if let Some(after_id) = after {
+        sqlx::query_as::<_, Item>(
+            "SELECT * FROM items \
+             WHERE conversation_id = $1 AND tenant_id = $2 AND id > $3 \
+             ORDER BY seq ASC, id ASC \
+             LIMIT $4"
+        )
+        .bind(conversation_id)
+        .bind(tenant_id)
+        .bind(after_id)
+        .bind(limit)
+        .fetch_all(pool)
+        .await
+    } else {
+        sqlx::query_as::<_, Item>(
+            "SELECT * FROM items \
+             WHERE conversation_id = $1 AND tenant_id = $2 \
+             ORDER BY seq ASC, id ASC \
+             LIMIT $3"
+        )
+        .bind(conversation_id)
+        .bind(tenant_id)
+        .bind(limit)
+        .fetch_all(pool)
+        .await
+    }
+}
+
+/// Get a single item by ID with tenant scoping.
+///
+/// # Errors
+/// Returns `DbResult::Err` if the database query fails.
+pub async fn get_item_by_tenant(
+    pool: &DbPool,
+    tenant_id: &str,
+    item_id: &str,
+) -> DbResult<Option<Item>> {
+    sqlx::query_as::<_, Item>(
+        "SELECT * FROM items WHERE id = $1 AND tenant_id = $2"
+    )
+    .bind(item_id)
+    .bind(tenant_id)
+    .fetch_optional(pool)
+    .await
+}
+
+/// Delete an item by ID with tenant scoping.
+///
+/// # Errors
+/// Returns `DbResult::Err` if the database query fails.
+pub async fn delete_item(
+    pool: &DbPool,
+    tenant_id: &str,
+    item_id: &str,
+) -> DbResult<u64> {
+    let result = sqlx::query(
+        "DELETE FROM items WHERE id = $1 AND tenant_id = $2"
+    )
+    .bind(item_id)
+    .bind(tenant_id)
+    .execute(pool)
+    .await?;
+    Ok(result.rows_affected())
 }
 
 #[cfg(test)]

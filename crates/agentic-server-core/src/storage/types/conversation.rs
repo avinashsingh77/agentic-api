@@ -55,6 +55,8 @@ pub struct ConversationData {
     pub metadata: Option<String>,
     /// Creation timestamp as Unix timestamp in seconds
     pub created_at: i64,
+    /// Tenant identifier for multi-tenancy isolation
+    pub tenant_id: Option<String>,
 }
 
 impl From<StorageDbConversation> for ConversationData {
@@ -63,6 +65,7 @@ impl From<StorageDbConversation> for ConversationData {
             conversation_id: row.id,
             metadata: row.metadata,
             created_at: row.created_at,
+            tenant_id: row.tenant_id,
         }
     }
 }
@@ -74,6 +77,7 @@ impl From<ConversationData> for StorageDbConversation {
             metadata: data.metadata,
             created_at: data.created_at,
             latest_response_id: None,
+            tenant_id: data.tenant_id,
         }
     }
 }
@@ -89,6 +93,7 @@ mod tests {
             metadata: None,
             created_at: 1_704_067_200,
             latest_response_id: None,
+            tenant_id: None,
         };
 
         let conversation: ConversationData = db_row.into();
@@ -102,6 +107,7 @@ mod tests {
             conversation_id: "conv_456".to_string(),
             metadata: Some(r#"{"key":"value"}"#.to_string()),
             created_at: 1_704_067_200,
+            tenant_id: Some("tenant_test".to_string()),
         };
 
         let db_row: StorageDbConversation = data.into();
@@ -116,6 +122,7 @@ mod tests {
             conversation_id: "conv_clone".to_string(),
             metadata: None,
             created_at: 1_704_067_200,
+            tenant_id: None,
         };
 
         let cloned = data.clone();

@@ -22,6 +22,9 @@ pub struct Conversation {
 
     /// Response that committed the latest conversation turn.
     pub latest_response_id: Option<String>,
+
+    /// Tenant identifier for multi-tenancy isolation.
+    pub tenant_id: Option<String>,
 }
 
 #[derive(Debug, sqlx::FromRow)]
@@ -122,6 +125,7 @@ pub async fn get_snapshot(pool: &DbPool, id: &str) -> DbResult<ConversationSnaps
                 created_at,
                 conversation_id: Some(conversation_id),
                 seq: row.item_sequence,
+                tenant_id: None,
             }),
             (None, None, None, None) => {}
             _ => {
@@ -184,6 +188,88 @@ pub async fn set_latest_response_in_tx(tx: &mut DbTransaction<'_>, id: &str, res
     Ok(())
 }
 
+/// Create a conversation with metadata and tenant.
+///
+/// # Errors
+/// Returns `DbResult::Err` if the database insertion fails.
+pub async fn create_with_metadata(
+    pool: &DbPool,
+    id: &str,
+    tenant_id: Option<&str>,
+    metadata: Option<&str>,
+) -> DbResult<Conversation> {
+    let now = utcnow_str();
+    sqlx::query_as::<_, Conversation>(
+        "INSERT INTO conversations (id, tenant_id, metadata, created_at) \
+         VALUES ($1, $2, $3, $4) RETURNING *",
+    )
+    .bind(id)
+    .bind(tenant_id)
+    .bind(metadata)
+    .bind(now)
+    .fetch_one(pool)
+    .await
+}
+
+/// Get a conversation by ID and tenant.
+///
+/// # Errors
+/// Returns `DbResult::Err` if the database query fails.
+pub async fn get_by_tenant(
+    pool: &DbPool,
+    tenant_id: &str,
+    conversation_id: &str,
+) -> DbResult<Option<Conversation>> {
+    sqlx::query_as::<_, Conversation>(
+        "SELECT * FROM conversations WHERE id = $1 AND tenant_id = $2"
+    )
+    .bind(conversation_id)
+    .bind(tenant_id)
+    .fetch_optional(pool)
+    .await
+}
+
+/// Update conversation metadata.
+///
+/// # Errors
+/// Returns `DbResult::Err` if the database update fails or the conversation does not exist.
+pub async fn update_metadata(
+    pool: &DbPool,
+    tenant_id: &str,
+    conversation_id: &str,
+    metadata: &str,
+) -> DbResult<Conversation> {
+    sqlx::query_as::<_, Conversation>(
+        "UPDATE conversations SET metadata = $1 \
+         WHERE id = $2 AND tenant_id = $3 \
+         RETURNING *"
+    )
+    .bind(metadata)
+    .bind(conversation_id)
+    .bind(tenant_id)
+    .fetch_one(pool)
+    .await
+}
+
+/// Delete a conversation by ID and tenant.
+///
+/// # Errors
+/// Returns `DbResult::Err` if the database query fails.
+pub async fn delete(
+    pool: &DbPool,
+    tenant_id: &str,
+    conversation_id: &str,
+) -> DbResult<u64> {
+    let result = sqlx::query(
+        "DELETE FROM conversations WHERE id = $1 AND tenant_id = $2"
+    )
+    .bind(conversation_id)
+    .bind(tenant_id)
+    .execute(pool)
+    .await?;
+    Ok(result.rows_affected())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -195,6 +281,7 @@ mod tests {
             metadata: None,
             created_at: 1_704_067_200,
             latest_response_id: None,
+            tenant_id: None,
         };
 
         assert_eq!(conversation.id, "conv_1");

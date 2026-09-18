@@ -236,4 +236,106 @@ impl ConversationStore {
 
         Ok(())
     }
+
+    /// Create a conversation with metadata and optional initial items.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if database operation fails.
+    pub async fn create_with_metadata_and_items(
+        &self,
+        tenant_id: Option<&str>,
+        metadata: Option<serde_json::Value>,
+        initial_items: Vec<InOutItem>,
+    ) -> StoreResult<ConversationData> {
+        use super::models::item;
+
+        let pool = self.pool()?;
+        let conversation_id = uuid7_str("conv_");
+        let metadata_str = metadata
+            .map(|m| serialize_to_string(&m))
+            .transpose()?;
+
+        let row = conversation::create_with_metadata(
+            pool,
+            &conversation_id,
+            tenant_id,
+            metadata_str.as_deref(),
+        ).await?;
+
+        // If initial_items provided, persist them
+        if !initial_items.is_empty() {
+            let items: Vec<(String, String)> = initial_items
+                .into_iter()
+                .map(|item| {
+                    let item_id = uuid7_str("item_");
+                    let data = String::try_from(&item)?;
+                    Ok((item_id, data))
+                })
+                .collect::<Result<_, StorageError>>()?;
+
+            if let Some(tid) = tenant_id {
+                item::create_items_for_conversation(pool, tid, &conversation_id, items).await?;
+            }
+        }
+
+        Ok(row.into())
+    }
+
+    /// Retrieve a conversation by ID with tenant scoping.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if conversation not found or database query fails.
+    pub async fn retrieve(
+        &self,
+        tenant_id: &str,
+        conversation_id: &str,
+    ) -> StoreResult<ConversationData> {
+        let pool = self.pool()?;
+        let row = conversation::get_by_tenant(pool, tenant_id, conversation_id)
+            .await?
+            .ok_or_else(|| StorageError::not_found("Conversation", conversation_id))?;
+        Ok(row.into())
+    }
+
+    /// Update conversation metadata.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if conversation not found or database operation fails.
+    pub async fn update_metadata(
+        &self,
+        tenant_id: &str,
+        conversation_id: &str,
+        metadata: serde_json::Value,
+    ) -> StoreResult<ConversationData> {
+        let pool = self.pool()?;
+        let metadata_str = serialize_to_string(&metadata)?;
+        let row = conversation::update_metadata(pool, tenant_id, conversation_id, &metadata_str)
+            .await
+            .map_err(|e| match e {
+                sqlx::Error::RowNotFound => StorageError::not_found("Conversation", conversation_id),
+                other => other.into(),
+            })?;
+        Ok(row.into())
+    }
+
+    /// Delete a conversation.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if conversation not found or database operation fails.
+    pub async fn delete(
+        &self,
+        tenant_id: &str,
+        conversation_id: &str,
+    ) -> StoreResult<()> {
+        let pool = self.pool()?;
+        let rows_affected = conversation::delete(pool, tenant_id, conversation_id).await?;
+        if rows_affected == 0 {
+            return Err(StorageError::not_found("Conversation", conversation_id));
+        }
+        Ok(())
+    }
 }
