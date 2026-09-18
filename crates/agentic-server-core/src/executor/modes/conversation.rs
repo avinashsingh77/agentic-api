@@ -21,6 +21,12 @@ impl ConversationHandler {
         Self { store }
     }
 
+    /// Returns a reference to the underlying conversation store.
+    #[must_use]
+    pub fn store(&self) -> &ConversationStore {
+        &self.store
+    }
+
     /// Gets an existing conversation or creates one.
     ///
     /// Reads `conversation_id` from `ctx.original_request`.

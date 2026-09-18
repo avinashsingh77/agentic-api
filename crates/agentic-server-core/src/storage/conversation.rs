@@ -34,7 +34,7 @@ impl ConversationStore {
     /// # Errors
     ///
     /// Returns error if store is disabled (no pool configured).
-    fn pool(&self) -> StoreResult<&DbPool> {
+    pub fn pool(&self) -> StoreResult<&DbPool> {
         self.pool.as_deref().ok_or(StorageError::NotConfigured)
     }
 
