@@ -47,7 +47,7 @@ async fn postgres_conversation_tenant_isolation() {
         Err(agentic_core::storage::StorageError::NotFound { .. }) => {
             // Expected
         }
-        other => panic!("Expected NotFound error, got: {:?}", other),
+        other => panic!("Expected NotFound error, got: {other:?}"),
     }
 }
 
@@ -195,7 +195,7 @@ async fn postgres_concurrent_tenant_isolation() {
 
         // Can retrieve own conversation
         let own = store.retrieve(tenant, conv_id).await;
-        assert!(own.is_ok(), "tenant {} should retrieve own conversation", tenant);
+        assert!(own.is_ok(), "tenant {tenant} should retrieve own conversation");
 
         // Cannot retrieve other tenants' conversations
         for (other_tenant, other_conv_id) in &results {
@@ -203,9 +203,7 @@ async fn postgres_concurrent_tenant_isolation() {
                 let cross_access = store.retrieve(tenant, other_conv_id).await;
                 assert!(
                     cross_access.is_err(),
-                    "tenant {} should NOT access tenant {}'s conversation",
-                    tenant,
-                    other_tenant
+                    "tenant {tenant} should NOT access tenant {other_tenant}'s conversation"
                 );
             }
         }

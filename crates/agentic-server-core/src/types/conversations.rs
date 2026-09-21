@@ -188,17 +188,17 @@ mod tests {
 
     #[test]
     fn test_conversation_response_new() {
-        let resp = ConversationResponse::new("conv_123".to_string(), 1704067200, Some(json!({"user": "alice"})));
+        let resp = ConversationResponse::new("conv_123".to_string(), 1_704_067_200, Some(json!({"user": "alice"})));
 
         assert_eq!(resp.id, "conv_123");
         assert_eq!(resp.object, "conversation");
-        assert_eq!(resp.created_at, 1704067200);
+        assert_eq!(resp.created_at, 1_704_067_200);
         assert_eq!(resp.metadata, json!({"user": "alice"}));
     }
 
     #[test]
     fn test_conversation_response_null_metadata() {
-        let resp = ConversationResponse::new("conv_123".to_string(), 1704067200, None);
+        let resp = ConversationResponse::new("conv_123".to_string(), 1_704_067_200, None);
 
         assert_eq!(resp.metadata, Value::Null);
     }
@@ -209,13 +209,13 @@ mod tests {
             ItemResponse {
                 id: "item_1".to_string(),
                 object: "conversation.item".to_string(),
-                created_at: 1704067200,
+                created_at: 1_704_067_200,
                 item: ConversationItem::Input(InputItem::Unknown),
             },
             ItemResponse {
                 id: "item_2".to_string(),
                 object: "conversation.item".to_string(),
-                created_at: 1704067300,
+                created_at: 1_704_067_300,
                 item: ConversationItem::Input(InputItem::Unknown),
             },
         ];
@@ -274,13 +274,13 @@ mod tests {
         // Use a simple unknown item for serialization test
         let item = ConversationItem::Input(InputItem::Unknown);
 
-        let resp = ItemResponse::new("item_123".to_string(), 1704067200, item);
+        let resp = ItemResponse::new("item_123".to_string(), 1_704_067_200, item);
         let json_value = serde_json::to_value(&resp).expect("serialize");
 
         // Should have nested structure, not flattened
         assert_eq!(json_value["id"], "item_123");
         assert_eq!(json_value["object"], "conversation.item");
-        assert_eq!(json_value["created_at"], 1704067200);
+        assert_eq!(json_value["created_at"], 1_704_067_200);
         assert!(json_value["item"].is_object());
     }
 
@@ -301,7 +301,7 @@ mod tests {
             ConversationItem::Input(_) => {
                 // Successfully deserialized with nested structure
             }
-            _ => panic!("Expected InputItem"),
+            ConversationItem::Output(_) => panic!("Expected InputItem"),
         }
     }
 
@@ -322,7 +322,7 @@ mod tests {
         let resp: ItemResponse = serde_json::from_str(json_str).expect("deserialize");
         assert_eq!(resp.id, "item_123");
         assert_eq!(resp.object, "conversation.item");
-        assert_eq!(resp.created_at, 1704067200);
+        assert_eq!(resp.created_at, 1_704_067_200);
 
         // Re-serialize and verify structure is preserved
         let json_value = serde_json::to_value(&resp).expect("serialize");

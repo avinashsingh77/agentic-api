@@ -38,7 +38,7 @@ async fn test_conversation_tenant_isolation() {
         Err(agentic_core::storage::StorageError::NotFound { .. }) => {
             // Expected
         }
-        other => panic!("Expected NotFound error, got: {:?}", other),
+        other => panic!("Expected NotFound error, got: {other:?}"),
     }
 }
 

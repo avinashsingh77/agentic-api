@@ -25,7 +25,7 @@ fn extract_tenant_id(_req: &Request) -> Result<String, Response> {
 #[cfg_attr(feature = "openapi", utoipa::path(
     post,
     path = "/v1/conversations",
-    request_body = CreateConversationRequest,
+    request_body(content = Option<CreateConversationRequest>, content_type = "application/json"),
     responses(
         (status = 200, description = "Conversation created", body = ConversationResponse),
         (status = 400, description = "Invalid request"),
@@ -45,9 +45,17 @@ pub async fn create_conversation(State(state): State<AppState>, req: Request) ->
         Err(e) => return e,
     };
 
-    let request: CreateConversationRequest = match extract_json(&bytes) {
-        Ok(r) => r,
-        Err(e) => return e,
+    // Empty body is valid - treat as default request with no metadata or items
+    let request: CreateConversationRequest = if bytes.is_empty() {
+        CreateConversationRequest {
+            metadata: None,
+            items: None,
+        }
+    } else {
+        match extract_json(&bytes) {
+            Ok(r) => r,
+            Err(e) => return e,
+        }
     };
 
     let initial_items: Vec<InOutItem> = request

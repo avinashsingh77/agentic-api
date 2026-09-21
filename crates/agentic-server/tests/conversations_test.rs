@@ -1,5 +1,6 @@
 mod common;
 
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use http::StatusCode;
@@ -10,15 +11,16 @@ use agentic_core::storage::{ConversationStore, ResponseStore, create_pool_with_s
 use agentic_server::app::{AppState, DEFAULT_MAX_REQUEST_BODY_SIZE, ReadinessTracker, WebSocketTracker};
 use common::{spawn_gateway, spawn_mock_llm, test_config};
 
+// Counter for unique in-memory database names to avoid migration conflicts
+static COUNTER: AtomicU64 = AtomicU64::new(0);
+
 /// Create test state with in-memory SQLite storage enabled.
 async fn test_state_with_storage(llm_url: &str) -> AppState {
     let config = test_config(llm_url);
-    // Use unique temporary file for each test to avoid migration conflicts
-    use std::sync::atomic::{AtomicU64, Ordering};
-    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    // Use unique in-memory database for each test to avoid migration conflicts and file descriptor exhaustion
     let id = COUNTER.fetch_add(1, Ordering::Relaxed);
-    let db_path = std::env::temp_dir().join(format!("test_conversations_{}.db", id));
-    let db_url = format!("sqlite://{}", db_path.display());
+    // Use in-memory SQLite with unique name to allow parallel test execution without exhausting file descriptors
+    let db_url = format!("sqlite:file:test_conv_{id}?mode=memory&cache=shared");
     let pool = create_pool_with_schema(Some(&db_url))
         .await
         .expect("failed to create test pool");
@@ -51,8 +53,8 @@ async fn test_state_with_storage(llm_url: &str) -> AppState {
 
 #[tokio::test]
 async fn test_create_conversation_with_metadata() {
-    let (_llm_url, _h1) = spawn_mock_llm().await;
-    let state = test_state_with_storage(&_llm_url).await;
+    let (llm_url, _h1) = spawn_mock_llm().await;
+    let state = test_state_with_storage(&llm_url).await;
     let (gw_url, _h2) = spawn_gateway(state).await;
 
     let resp = reqwest::Client::new()
@@ -75,8 +77,8 @@ async fn test_create_conversation_with_metadata() {
 
 #[tokio::test]
 async fn test_create_conversation_with_initial_items() {
-    let (_llm_url, _h1) = spawn_mock_llm().await;
-    let state = test_state_with_storage(&_llm_url).await;
+    let (llm_url, _h1) = spawn_mock_llm().await;
+    let state = test_state_with_storage(&llm_url).await;
     let (gw_url, _h2) = spawn_gateway(state).await;
 
     let resp = reqwest::Client::new()
@@ -101,8 +103,8 @@ async fn test_create_conversation_with_initial_items() {
 
 #[tokio::test]
 async fn test_retrieve_conversation() {
-    let (_llm_url, _h1) = spawn_mock_llm().await;
-    let state = test_state_with_storage(&_llm_url).await;
+    let (llm_url, _h1) = spawn_mock_llm().await;
+    let state = test_state_with_storage(&llm_url).await;
     let (gw_url, _h2) = spawn_gateway(state).await;
 
     let client = reqwest::Client::new();
@@ -132,8 +134,8 @@ async fn test_retrieve_conversation() {
 
 #[tokio::test]
 async fn test_retrieve_nonexistent_conversation_returns_404() {
-    let (_llm_url, _h1) = spawn_mock_llm().await;
-    let state = test_state_with_storage(&_llm_url).await;
+    let (llm_url, _h1) = spawn_mock_llm().await;
+    let state = test_state_with_storage(&llm_url).await;
     let (gw_url, _h2) = spawn_gateway(state).await;
 
     let resp = reqwest::Client::new()
@@ -149,8 +151,8 @@ async fn test_retrieve_nonexistent_conversation_returns_404() {
 
 #[tokio::test]
 async fn test_update_conversation_metadata() {
-    let (_llm_url, _h1) = spawn_mock_llm().await;
-    let state = test_state_with_storage(&_llm_url).await;
+    let (llm_url, _h1) = spawn_mock_llm().await;
+    let state = test_state_with_storage(&llm_url).await;
     let (gw_url, _h2) = spawn_gateway(state).await;
 
     let client = reqwest::Client::new();
@@ -182,8 +184,8 @@ async fn test_update_conversation_metadata() {
 
 #[tokio::test]
 async fn test_update_nonexistent_conversation_returns_404() {
-    let (_llm_url, _h1) = spawn_mock_llm().await;
-    let state = test_state_with_storage(&_llm_url).await;
+    let (llm_url, _h1) = spawn_mock_llm().await;
+    let state = test_state_with_storage(&llm_url).await;
     let (gw_url, _h2) = spawn_gateway(state).await;
 
     let resp = reqwest::Client::new()
@@ -198,8 +200,8 @@ async fn test_update_nonexistent_conversation_returns_404() {
 
 #[tokio::test]
 async fn test_delete_conversation() {
-    let (_llm_url, _h1) = spawn_mock_llm().await;
-    let state = test_state_with_storage(&_llm_url).await;
+    let (llm_url, _h1) = spawn_mock_llm().await;
+    let state = test_state_with_storage(&llm_url).await;
     let (gw_url, _h2) = spawn_gateway(state).await;
 
     let client = reqwest::Client::new();
@@ -238,8 +240,8 @@ async fn test_delete_conversation() {
 
 #[tokio::test]
 async fn test_delete_nonexistent_conversation_returns_404() {
-    let (_llm_url, _h1) = spawn_mock_llm().await;
-    let state = test_state_with_storage(&_llm_url).await;
+    let (llm_url, _h1) = spawn_mock_llm().await;
+    let state = test_state_with_storage(&llm_url).await;
     let (gw_url, _h2) = spawn_gateway(state).await;
 
     let resp = reqwest::Client::new()
@@ -253,8 +255,8 @@ async fn test_delete_nonexistent_conversation_returns_404() {
 
 #[tokio::test]
 async fn test_create_item_in_conversation() {
-    let (_llm_url, _h1) = spawn_mock_llm().await;
-    let state = test_state_with_storage(&_llm_url).await;
+    let (llm_url, _h1) = spawn_mock_llm().await;
+    let state = test_state_with_storage(&llm_url).await;
     let (gw_url, _h2) = spawn_gateway(state).await;
 
     let client = reqwest::Client::new();
@@ -295,8 +297,8 @@ async fn test_create_item_in_conversation() {
 
 #[tokio::test]
 async fn test_create_item_in_nonexistent_conversation_returns_404() {
-    let (_llm_url, _h1) = spawn_mock_llm().await;
-    let state = test_state_with_storage(&_llm_url).await;
+    let (llm_url, _h1) = spawn_mock_llm().await;
+    let state = test_state_with_storage(&llm_url).await;
     let (gw_url, _h2) = spawn_gateway(state).await;
 
     let resp = reqwest::Client::new()
@@ -317,8 +319,8 @@ async fn test_create_item_in_nonexistent_conversation_returns_404() {
 
 #[tokio::test]
 async fn test_list_items_in_conversation() {
-    let (_llm_url, _h1) = spawn_mock_llm().await;
-    let state = test_state_with_storage(&_llm_url).await;
+    let (llm_url, _h1) = spawn_mock_llm().await;
+    let state = test_state_with_storage(&llm_url).await;
     let (gw_url, _h2) = spawn_gateway(state).await;
 
     let client = reqwest::Client::new();
@@ -358,8 +360,8 @@ async fn test_list_items_in_conversation() {
 
 #[tokio::test]
 async fn test_list_items_pagination() {
-    let (_llm_url, _h1) = spawn_mock_llm().await;
-    let state = test_state_with_storage(&_llm_url).await;
+    let (llm_url, _h1) = spawn_mock_llm().await;
+    let state = test_state_with_storage(&llm_url).await;
     let (gw_url, _h2) = spawn_gateway(state).await;
 
     let client = reqwest::Client::new();
@@ -412,8 +414,8 @@ async fn test_list_items_pagination() {
 
 #[tokio::test]
 async fn test_list_items_in_nonexistent_conversation_returns_404() {
-    let (_llm_url, _h1) = spawn_mock_llm().await;
-    let state = test_state_with_storage(&_llm_url).await;
+    let (llm_url, _h1) = spawn_mock_llm().await;
+    let state = test_state_with_storage(&llm_url).await;
     let (gw_url, _h2) = spawn_gateway(state).await;
 
     let resp = reqwest::Client::new()
@@ -427,8 +429,8 @@ async fn test_list_items_in_nonexistent_conversation_returns_404() {
 
 #[tokio::test]
 async fn test_retrieve_item() {
-    let (_llm_url, _h1) = spawn_mock_llm().await;
-    let state = test_state_with_storage(&_llm_url).await;
+    let (llm_url, _h1) = spawn_mock_llm().await;
+    let state = test_state_with_storage(&llm_url).await;
     let (gw_url, _h2) = spawn_gateway(state).await;
 
     let client = reqwest::Client::new();
@@ -469,8 +471,8 @@ async fn test_retrieve_item() {
 
 #[tokio::test]
 async fn test_retrieve_nonexistent_item_returns_404() {
-    let (_llm_url, _h1) = spawn_mock_llm().await;
-    let state = test_state_with_storage(&_llm_url).await;
+    let (llm_url, _h1) = spawn_mock_llm().await;
+    let state = test_state_with_storage(&llm_url).await;
     let (gw_url, _h2) = spawn_gateway(state).await;
 
     let client = reqwest::Client::new();
@@ -497,8 +499,8 @@ async fn test_retrieve_nonexistent_item_returns_404() {
 
 #[tokio::test]
 async fn test_delete_item() {
-    let (_llm_url, _h1) = spawn_mock_llm().await;
-    let state = test_state_with_storage(&_llm_url).await;
+    let (llm_url, _h1) = spawn_mock_llm().await;
+    let state = test_state_with_storage(&llm_url).await;
     let (gw_url, _h2) = spawn_gateway(state).await;
 
     let client = reqwest::Client::new();
@@ -548,8 +550,8 @@ async fn test_delete_item() {
 
 #[tokio::test]
 async fn test_delete_nonexistent_item_returns_404() {
-    let (_llm_url, _h1) = spawn_mock_llm().await;
-    let state = test_state_with_storage(&_llm_url).await;
+    let (llm_url, _h1) = spawn_mock_llm().await;
+    let state = test_state_with_storage(&llm_url).await;
     let (gw_url, _h2) = spawn_gateway(state).await;
 
     let client = reqwest::Client::new();
@@ -576,8 +578,8 @@ async fn test_delete_nonexistent_item_returns_404() {
 
 #[tokio::test]
 async fn test_item_belongs_to_conversation_validation() {
-    let (_llm_url, _h1) = spawn_mock_llm().await;
-    let state = test_state_with_storage(&_llm_url).await;
+    let (llm_url, _h1) = spawn_mock_llm().await;
+    let state = test_state_with_storage(&llm_url).await;
     let (gw_url, _h2) = spawn_gateway(state).await;
 
     let client = reqwest::Client::new();
