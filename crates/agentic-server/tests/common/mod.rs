@@ -1,3 +1,5 @@
+pub mod otlp_stub;
+
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 
@@ -28,6 +30,7 @@ pub fn test_config(llm_url: &str) -> Config {
         postgres: agentic_core::config::PostgresConfig::default(),
         sqlite: agentic_core::config::SqliteConfig::default(),
         tools: agentic_core::config::ToolRuntimeConfig::default(),
+        responses: agentic_core::config::ResponsesConfig::default(),
     }
 }
 
@@ -45,7 +48,8 @@ pub fn test_state_with_max_request_body_size(config: &Config, max_request_body_s
         ResponseHandler::new(ResponseStore::disabled()),
         Arc::new(reqwest::Client::new()),
         config.llm_api_base.clone(),
-    );
+    )
+    .with_responses_config(config.responses);
     let exec_ctx = Arc::new(exec_ctx);
     let proxy_state = ProxyState::new(config.clone()).expect("proxy state");
     AppState {
