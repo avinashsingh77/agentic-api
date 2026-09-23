@@ -126,23 +126,34 @@ record_scenario() {
             return 1
         fi
 
-        python3 "$SCRIPT_DIR/record_conversations_crud.py" \
+        if ! python3 "$SCRIPT_DIR/record_conversations_crud.py" \
             --provider openai \
             --model "$OPENAI_MODEL" \
             --scenario "$scenario" \
             --output "$temp_file" \
-            "${extra_args[@]}"
+            "${extra_args[@]}"; then
+            echo "ERROR: Python recorder failed for $provider/$scenario"
+            return 1
+        fi
     else
-        python3 "$SCRIPT_DIR/record_conversations_crud.py" \
+        if ! python3 "$SCRIPT_DIR/record_conversations_crud.py" \
             --provider gateway \
             --gateway-url "$GATEWAY_URL" \
             --model "$GATEWAY_MODEL" \
             --scenario "$scenario" \
             --output "$temp_file" \
-            "${extra_args[@]}"
+            "${extra_args[@]}"; then
+            echo "ERROR: Python recorder failed for $provider/$scenario"
+            return 1
+        fi
     fi
 
     # Validate before committing
+    if [[ ! -f "$temp_file" ]]; then
+        echo "ERROR: Recording did not produce output file: $temp_file"
+        return 1
+    fi
+
     if validate_cassette "$temp_file" "$scenario"; then
         mv "$temp_file" "$output_file"
         echo "✓ Recorded $provider/$scenario -> $output_file"
