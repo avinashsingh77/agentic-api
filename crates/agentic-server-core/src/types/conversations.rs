@@ -146,7 +146,7 @@ impl<'de> Deserialize<'de> for ConversationItem {
 }
 
 /// Ordering for conversation item pages.
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub enum ItemOrder {

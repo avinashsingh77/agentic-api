@@ -22,6 +22,7 @@ struct Cassette {
 }
 
 #[derive(Debug, serde::Deserialize)]
+#[allow(dead_code)] // Not all fields used in all tests
 struct Turn {
     filename: String,
     request: Request,
@@ -29,6 +30,7 @@ struct Turn {
 }
 
 #[derive(Debug, serde::Deserialize)]
+#[allow(dead_code)] // Not all fields used in all tests
 struct Request {
     method: String,
     path: String,
@@ -41,6 +43,7 @@ struct Request {
 }
 
 #[derive(Debug, serde::Deserialize)]
+#[allow(dead_code)] // Not all fields used in all tests
 struct Response {
     status_code: u16,
     #[serde(default)]
@@ -52,12 +55,12 @@ struct Response {
 fn load_cassette(name: &str) -> Result<Cassette> {
     let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     path.push("tests/cassettes/conversations");
-    path.push(format!("{}.yaml", name));
+    path.push(format!("{name}.yaml"));
 
     let content =
-        std::fs::read_to_string(&path).map_err(|e| format!("Failed to read cassette {}: {}", path.display(), e))?;
+        std::fs::read_to_string(&path).map_err(|e| format!("Failed to read cassette {}: {e}", path.display()))?;
 
-    serde_yaml::from_str(&content).map_err(|e| format!("Failed to parse cassette {}: {}", path.display(), e).into())
+    serde_yaml::from_str(&content).map_err(|e| format!("Failed to parse cassette {}: {e}", path.display()).into())
 }
 
 fn normalize_dynamic_fields(value: &mut Value) {
@@ -79,7 +82,7 @@ fn normalize_dynamic_fields(value: &mut Value) {
 
             // Normalize timestamps
             if map.contains_key("created_at") {
-                map.insert("created_at".to_string(), json!(1234567890));
+                map.insert("created_at".to_string(), json!(1_234_567_890));
             }
 
             // Recurse into nested objects
@@ -100,8 +103,7 @@ fn compare_responses(scenario: &str, turn_num: usize, openai_resp: &Response, ga
     // Compare status codes
     assert_eq!(
         openai_resp.status_code, gateway_resp.status_code,
-        "{} turn {}: Status code mismatch",
-        scenario, turn_num
+        "{scenario} turn {turn_num}: Status code mismatch"
     );
 
     // Compare response structure
@@ -111,7 +113,7 @@ fn compare_responses(scenario: &str, turn_num: usize, openai_resp: &Response, ga
         normalize_dynamic_fields(&mut gateway_body);
 
         // Compare normalized responses
-        compare_json_structure(&openai_body, &gateway_body, &format!("{} turn {}", scenario, turn_num));
+        compare_json_structure(&openai_body, &gateway_body, &format!("{scenario} turn {turn_num}"));
     }
 }
 
@@ -120,13 +122,13 @@ fn compare_json_structure(openai: &Value, gateway: &Value, path: &str) {
         (Value::Object(openai_map), Value::Object(gateway_map)) => {
             // Check that gateway has all OpenAI keys
             for key in openai_map.keys() {
-                assert!(gateway_map.contains_key(key), "{}: Gateway missing key '{}'", path, key);
+                assert!(gateway_map.contains_key(key), "{path}: Gateway missing key '{key}'");
             }
 
             // Compare values recursively
             for (key, openai_val) in openai_map {
                 if let Some(gateway_val) = gateway_map.get(key) {
-                    compare_json_structure(openai_val, gateway_val, &format!("{}.{}", path, key));
+                    compare_json_structure(openai_val, gateway_val, &format!("{path}.{key}"));
                 }
             }
         }
@@ -134,34 +136,33 @@ fn compare_json_structure(openai: &Value, gateway: &Value, path: &str) {
             assert_eq!(
                 openai_arr.len(),
                 gateway_arr.len(),
-                "{}: Array length mismatch (OpenAI: {}, Gateway: {})",
-                path,
+                "{path}: Array length mismatch (OpenAI: {}, Gateway: {})",
                 openai_arr.len(),
                 gateway_arr.len()
             );
 
             for (i, (openai_item, gateway_item)) in openai_arr.iter().zip(gateway_arr.iter()).enumerate() {
-                compare_json_structure(openai_item, gateway_item, &format!("{}[{}]", path, i));
+                compare_json_structure(openai_item, gateway_item, &format!("{path}[{i}]"));
             }
         }
         (Value::String(openai_str), Value::String(gateway_str)) => {
             // Allow normalized values to differ
             if !openai_str.ends_with("normalized") && !gateway_str.ends_with("normalized") {
-                assert_eq!(openai_str, gateway_str, "{}: String value mismatch", path);
+                assert_eq!(openai_str, gateway_str, "{path}: String value mismatch");
             }
         }
         (Value::Number(openai_num), Value::Number(gateway_num)) => {
             // Allow normalized timestamps to differ
-            if openai_num.as_i64() != Some(1234567890) && gateway_num.as_i64() != Some(1234567890) {
-                assert_eq!(openai_num, gateway_num, "{}: Number value mismatch", path);
+            if openai_num.as_i64() != Some(1_234_567_890) && gateway_num.as_i64() != Some(1_234_567_890) {
+                assert_eq!(openai_num, gateway_num, "{path}: Number value mismatch");
             }
         }
         (Value::Bool(openai_bool), Value::Bool(gateway_bool)) => {
-            assert_eq!(openai_bool, gateway_bool, "{}: Boolean value mismatch", path);
+            assert_eq!(openai_bool, gateway_bool, "{path}: Boolean value mismatch");
         }
         (Value::Null, Value::Null) => {}
         _ => {
-            panic!("{}: Type mismatch (OpenAI: {:?}, Gateway: {:?})", path, openai, gateway);
+            panic!("{path}: Type mismatch (OpenAI: {openai:?}, Gateway: {gateway:?})");
         }
     }
 }
@@ -292,7 +293,7 @@ fn test_pagination_comparison() -> Result<()> {
 #[test]
 fn test_stateful_context_comparison() -> Result<()> {
     let openai = load_cassette("conversations-stateful-context-openai")?;
-    let gateway = load_cassette("conversations-stateful-context-gateway")?;
+    let _gateway = load_cassette("conversations-stateful-context-gateway")?;
 
     // Verify that manual items were added before the Responses call
     let mut found_manual_items = false;

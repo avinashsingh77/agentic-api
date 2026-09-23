@@ -7,7 +7,7 @@ use serde::Deserialize;
 
 #[cfg(feature = "openapi")]
 use agentic_core::types::ConversationResponse;
-use agentic_core::types::{CreateItemRequest, DeletedResponse};
+use agentic_core::types::{CreateItemRequest, DeletedResponse, ItemResponse, ListItemsResponse};
 
 use super::super::common::{error_response, executor_error_response, extract_json, read_bytes};
 use super::conversations::extract_tenant_id;

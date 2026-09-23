@@ -24,9 +24,11 @@ impl ConversationHandler {
 
     /// Returns a reference to the underlying conversation store.
     ///
-    /// Private to enforce business logic through typed operations.
+    /// **For conversation-level operations only.** Item operations (create, list,
+    /// retrieve, delete) should use the typed methods on `ConversationHandler` to
+    /// enforce business logic and proper error handling.
     #[must_use]
-    fn store(&self) -> &ConversationStore {
+    pub fn store(&self) -> &ConversationStore {
         &self.store
     }
 
@@ -153,7 +155,7 @@ impl ConversationHandler {
         // Perform fallible conversion - propagate errors instead of silently dropping items
         let mut item_responses = Vec::with_capacity(created.len());
         for db_item in created {
-            let conversation_item = convert_item(db_item.clone())?;
+            let conversation_item = convert_item(&db_item)?;
             item_responses.push(ItemResponse::new(db_item.id, conversation_item));
         }
 
@@ -201,7 +203,7 @@ impl ConversationHandler {
         // Perform fallible conversion - propagate errors instead of silently dropping items
         let mut item_responses = Vec::with_capacity(items.len());
         for db_item in items {
-            let conversation_item = convert_item(db_item.clone())?;
+            let conversation_item = convert_item(&db_item)?;
             item_responses.push(ItemResponse::new(db_item.id, conversation_item));
         }
 
@@ -224,7 +226,7 @@ impl ConversationHandler {
             .await
             .map_err(ExecutorError::Storage)?;
 
-        let conversation_item = convert_item(db_item.clone())?;
+        let conversation_item = convert_item(&db_item)?;
         Ok(ItemResponse::new(db_item.id, conversation_item))
     }
 
@@ -301,18 +303,18 @@ impl ConversationHandler {
     }
 }
 
-/// Converts a stored Item to a ConversationItem with fallible error handling.
+/// Converts a stored Item to a `ConversationItem` with fallible error handling.
 ///
 /// # Errors
 /// Returns `ExecutorError` if the stored item cannot be deserialized.
-fn convert_item(item: Item) -> ExecutorResult<ConversationItem> {
-    let inout = item
+fn convert_item(item: &Item) -> ExecutorResult<ConversationItem> {
+    let io_item = item
         .as_inout()
         .ok_or_else(|| ExecutorError::InvalidRequest("Failed to deserialize stored item".into()))?;
 
-    match inout {
-        InOutItem::Input(input) => Ok(ConversationItem::Input(input)),
-        InOutItem::Output(output) => Ok(ConversationItem::Output(output)),
+    match io_item {
+        InOutItem::Input(item_input) => Ok(ConversationItem::Input(item_input)),
+        InOutItem::Output(item_output) => Ok(ConversationItem::Output(item_output)),
     }
 }
 
