@@ -38,8 +38,8 @@ pub async fn list_for_conversation(
         .await?;
 
         let Some((cursor_seq, cursor_id_value)) = cursor else {
-            // Cursor not found in this conversation - return empty
-            return Ok(Vec::new());
+            // Cursor not found in this conversation - invalid cursor
+            return Err(sqlx::Error::RowNotFound);
         };
 
         // Paginate using (seq, id) keyset - handles NULL seq correctly

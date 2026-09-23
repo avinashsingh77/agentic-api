@@ -7,10 +7,10 @@ use serde::Deserialize;
 
 #[cfg(feature = "openapi")]
 use agentic_core::types::ConversationResponse;
-use agentic_core::types::{CreateItemRequest, DeletedResponse, ItemResponse, ListItemsResponse};
+use agentic_core::types::{CreateItemRequest, ItemResponse, ListItemsResponse};
 
 use super::super::common::{error_response, executor_error_response, extract_json, read_bytes};
-use super::conversations::extract_tenant_id;
+use super::conversations::{conversation_response, extract_tenant_id};
 use crate::app::AppState;
 
 /// Query parameters for listing conversation items.
@@ -111,6 +111,15 @@ pub async fn list_items(
         Ok(id) => id,
         Err(error) => return error,
     };
+
+    // Validate limit parameter
+    if query.limit < 1 || query.limit > 100 {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "limit must be between 1 and 100",
+        );
+    }
 
     // Validate order parameter
     if query.order != "asc" && query.order != "desc" {
@@ -214,11 +223,7 @@ pub async fn delete_item(
         .delete_item(&tenant_id, &conversation_id, &item_id)
         .await
     {
-        Ok(_conversation) => {
-            // Return deleted response instead of conversation
-            let response = DeletedResponse::item(item_id);
-            axum::Json(response).into_response()
-        }
+        Ok(conversation) => conversation_response(conversation),
         Err(e) => executor_error_response(e),
     }
 }
