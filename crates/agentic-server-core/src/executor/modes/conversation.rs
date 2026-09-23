@@ -1,8 +1,8 @@
 //! Conversation storage handler — owns all conversation store operations.
 
 use crate::storage::{
-    ConversationData, ConversationSnapshot, ConversationStore, ConversationVersion, InOutItem, Item,
-    ResponseMetadata, StorageError,
+    ConversationData, ConversationSnapshot, ConversationStore, ConversationVersion, InOutItem, Item, ResponseMetadata,
+    StorageError,
 };
 use crate::types::conversations::{ConversationItem, ItemResponse, ListItemsResponse};
 use crate::types::io::OutputItem;
@@ -306,9 +306,9 @@ impl ConversationHandler {
 /// # Errors
 /// Returns `ExecutorError` if the stored item cannot be deserialized.
 fn convert_item(item: Item) -> ExecutorResult<ConversationItem> {
-    let inout = item.as_inout().ok_or_else(|| {
-        ExecutorError::InvalidRequest("Failed to deserialize stored item".into())
-    })?;
+    let inout = item
+        .as_inout()
+        .ok_or_else(|| ExecutorError::InvalidRequest("Failed to deserialize stored item".into()))?;
 
     match inout {
         InOutItem::Input(input) => Ok(ConversationItem::Input(input)),
