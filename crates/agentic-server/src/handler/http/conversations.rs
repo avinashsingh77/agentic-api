@@ -2,19 +2,20 @@ use axum::extract::{Path, Request, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 
-use agentic_core::storage::InOutItem;
+use agentic_core::executor::ExecutorError;
+use agentic_core::storage::{ConversationData, InOutItem, StorageError};
 use agentic_core::types::{
     ConversationResponse, CreateConversationRequest, DeletedResponse, UpdateConversationRequest,
 };
 
-use super::super::common::{error_response, extract_json, read_bytes};
+use super::super::common::{error_response, executor_error_response, extract_json, read_bytes};
 use crate::app::AppState;
 
 /// Extract tenant ID from authenticated principal in request extensions.
 ///
 /// Returns Result to support future authentication error handling.
 #[allow(clippy::unnecessary_wraps, clippy::result_large_err)]
-fn extract_tenant_id(_req: &Request) -> Result<String, Response> {
+pub(super) fn extract_tenant_id(_req: &Request) -> Result<String, Response> {
     // For now, return a placeholder until we wire up authentication
     // In production, this would extract from the AuthenticatedPrincipal extension
     // and return Err(response) for authentication failures
@@ -58,6 +59,14 @@ pub async fn create_conversation(State(state): State<AppState>, req: Request) ->
         }
     };
 
+    if request.items.as_ref().is_some_and(|items| items.len() > 20) {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "invalid_request_error",
+            "a conversation accepts at most 20 initial items",
+        );
+    }
+
     let initial_items: Vec<InOutItem> = request
         .items
         .unwrap_or_default()
@@ -75,17 +84,7 @@ pub async fn create_conversation(State(state): State<AppState>, req: Request) ->
         .create_with_metadata_and_items(Some(&tenant_id), request.metadata, initial_items)
         .await
     {
-        Ok(data) => {
-            let metadata = data
-                .metadata
-                .as_ref()
-                .and_then(|s| serde_json::from_str(s).ok())
-                .unwrap_or(serde_json::Value::Null);
-
-            let response = ConversationResponse::new(data.conversation_id, data.created_at, Some(metadata));
-
-            axum::Json(response).into_response()
-        }
+        Ok(data) => conversation_response(data),
         Err(e) => error_response(
             StatusCode::INTERNAL_SERVER_ERROR,
             "storage_error",
@@ -125,17 +124,7 @@ pub async fn retrieve_conversation(
         .retrieve(&tenant_id, &conversation_id)
         .await
     {
-        Ok(data) => {
-            let metadata = data
-                .metadata
-                .as_ref()
-                .and_then(|s| serde_json::from_str(s).ok())
-                .unwrap_or(serde_json::Value::Null);
-
-            let response = ConversationResponse::new(data.conversation_id, data.created_at, Some(metadata));
-
-            axum::Json(response).into_response()
-        }
+        Ok(data) => conversation_response(data),
         Err(agentic_core::storage::StorageError::NotFound { .. }) => {
             error_response(StatusCode::NOT_FOUND, "not_found", "Conversation not found")
         }
@@ -190,17 +179,7 @@ pub async fn update_conversation(
         .update_metadata(&tenant_id, &conversation_id, request.metadata)
         .await
     {
-        Ok(data) => {
-            let metadata = data
-                .metadata
-                .as_ref()
-                .and_then(|s| serde_json::from_str(s).ok())
-                .unwrap_or(serde_json::Value::Null);
-
-            let response = ConversationResponse::new(data.conversation_id, data.created_at, Some(metadata));
-
-            axum::Json(response).into_response()
-        }
+        Ok(data) => conversation_response(data),
         Err(agentic_core::storage::StorageError::NotFound { .. }) => {
             error_response(StatusCode::NOT_FOUND, "not_found", "Conversation not found")
         }
@@ -256,4 +235,21 @@ pub async fn delete_conversation(
             &format!("Failed to delete conversation: {e}"),
         ),
     }
+}
+
+pub(super) fn storage_error(error: StorageError) -> Response {
+    executor_error_response(ExecutorError::Storage(error))
+}
+
+pub(super) fn conversation_response(data: ConversationData) -> Response {
+    let metadata = match data.metadata.as_deref().map(serde_json::from_str).transpose() {
+        Ok(metadata) => metadata,
+        Err(error) => return storage_error(StorageError::Serialization(error)),
+    };
+    axum::Json(ConversationResponse::new(
+        data.conversation_id,
+        data.created_at,
+        metadata,
+    ))
+    .into_response()
 }

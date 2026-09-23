@@ -2,6 +2,11 @@ mod support;
 
 use agentic_core::storage::ConversationStore;
 use serde_json::json;
+
+fn metadata(value: serde_json::Value) -> agentic_core::types::conversations::ConversationMetadata {
+    serde_json::from_value(value).unwrap()
+}
+
 use support::setup_pool;
 
 #[tokio::test]
@@ -13,7 +18,7 @@ async fn test_conversation_tenant_isolation() {
     let conv_a = store
         .create_with_metadata_and_items(
             Some("tenant_a"),
-            Some(json!({"user": "alice", "project": "test"})),
+            Some(metadata(json!({"user": "alice", "project": "test"}))),
             vec![],
         )
         .await
@@ -49,7 +54,7 @@ async fn test_conversation_metadata_update_with_tenant() {
 
     // Create conversation
     let conv = store
-        .create_with_metadata_and_items(Some("tenant_a"), Some(json!({"status": "draft"})), vec![])
+        .create_with_metadata_and_items(Some("tenant_a"), Some(metadata(json!({"status": "draft"}))), vec![])
         .await
         .expect("create failed");
 
@@ -58,7 +63,7 @@ async fn test_conversation_metadata_update_with_tenant() {
         .update_metadata(
             "tenant_a",
             &conv.conversation_id,
-            json!({"status": "active", "updated": true}),
+            metadata(json!({"status": "active", "updated": "true"})),
         )
         .await
         .expect("update_metadata failed");
@@ -81,7 +86,7 @@ async fn test_conversation_delete_with_tenant_scoping() {
 
     // Create conversation for tenant A
     let conv = store
-        .create_with_metadata_and_items(Some("tenant_a"), Some(json!({"temp": true})), vec![])
+        .create_with_metadata_and_items(Some("tenant_a"), Some(metadata(json!({"temp": "true"}))), vec![])
         .await
         .expect("create failed");
 
@@ -125,7 +130,11 @@ async fn test_conversation_create_with_initial_items() {
 
     // Create conversation with initial items
     let conv = store
-        .create_with_metadata_and_items(Some("tenant_a"), Some(json!({"test": "initial_items"})), initial_items)
+        .create_with_metadata_and_items(
+            Some("tenant_a"),
+            Some(metadata(json!({"test": "initial_items"}))),
+            initial_items,
+        )
         .await
         .expect("create with items failed");
 

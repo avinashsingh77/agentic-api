@@ -5,6 +5,10 @@ use agentic_core::storage::{ConversationStore, InOutItem, create_pool_with_schem
 use agentic_core::types::io::{InputItem, InputMessage, InputMessageContent};
 use serde_json::json;
 
+fn metadata(value: serde_json::Value) -> agentic_core::types::conversations::ConversationMetadata {
+    serde_json::from_value(value).unwrap()
+}
+
 async fn setup_postgres_pool() -> Arc<agentic_core::storage::DbPool> {
     let database_url = std::env::var("TEST_POSTGRES_URL").expect("TEST_POSTGRES_URL must be set");
     create_pool_with_schema_and_configs(Some(&database_url), SqliteConfig::default(), PostgresConfig::default())
@@ -22,7 +26,7 @@ async fn postgres_conversation_tenant_isolation() {
     let conv_a = store
         .create_with_metadata_and_items(
             Some("tenant_a"),
-            Some(json!({"user": "alice", "project": "test"})),
+            Some(metadata(json!({"user": "alice", "project": "test"}))),
             vec![],
         )
         .await
@@ -59,7 +63,7 @@ async fn postgres_conversation_metadata_update_with_tenant() {
 
     // Create conversation
     let conv = store
-        .create_with_metadata_and_items(Some("tenant_a"), Some(json!({"status": "draft"})), vec![])
+        .create_with_metadata_and_items(Some("tenant_a"), Some(metadata(json!({"status": "draft"}))), vec![])
         .await
         .expect("create failed");
 
@@ -68,7 +72,7 @@ async fn postgres_conversation_metadata_update_with_tenant() {
         .update_metadata(
             "tenant_a",
             &conv.conversation_id,
-            json!({"status": "active", "updated": true}),
+            metadata(json!({"status": "active", "updated": "true"})),
         )
         .await
         .expect("update_metadata failed");
@@ -92,7 +96,7 @@ async fn postgres_conversation_delete_with_tenant_scoping() {
 
     // Create conversation for tenant A
     let conv = store
-        .create_with_metadata_and_items(Some("tenant_a"), Some(json!({"temp": true})), vec![])
+        .create_with_metadata_and_items(Some("tenant_a"), Some(metadata(json!({"temp": "true"}))), vec![])
         .await
         .expect("create failed");
 
@@ -136,7 +140,7 @@ async fn postgres_conversation_create_with_initial_items() {
     let conv = store
         .create_with_metadata_and_items(
             Some("tenant_a"),
-            Some(json!({"test": "initial_items", "db": "postgres"})),
+            Some(metadata(json!({"test": "initial_items", "db": "postgres"}))),
             initial_items,
         )
         .await
@@ -172,7 +176,7 @@ async fn postgres_concurrent_tenant_isolation() {
             barrier.wait().await;
 
             let conv = store
-                .create_with_metadata_and_items(Some(&tenant), Some(json!({"tenant": tenant})), vec![])
+                .create_with_metadata_and_items(Some(&tenant), Some(metadata(json!({"tenant": tenant}))), vec![])
                 .await
                 .expect("create failed");
 
@@ -208,4 +212,95 @@ async fn postgres_concurrent_tenant_isolation() {
             }
         }
     }
+}
+
+#[tokio::test]
+#[ignore = "requires TEST_POSTGRES_URL pointing to an isolated PostgreSQL database"]
+async fn postgres_item_crud_uses_turn_locking_and_preserves_history() {
+    use agentic_core::storage::{ResponseMetadata, ResponseStore, StorageError};
+    use agentic_core::types::conversations::ItemOrder;
+
+    let pool = setup_postgres_pool().await;
+    let store = Arc::new(ConversationStore::new(Arc::clone(&pool)));
+    let conv = store
+        .create_with_metadata_and_items(Some("crud_tenant"), None, vec![])
+        .await
+        .unwrap();
+    let make_item = || {
+        InOutItem::Input(InputItem::Message(InputMessage {
+            id: None,
+            role: "user".into(),
+            status: None,
+            content: InputMessageContent::Text("retained".into()),
+        }))
+    };
+    let response_id = agentic_core::utils::common::uuid7_str("resp_");
+    store
+        .persist(
+            &conv.conversation_id,
+            &response_id,
+            None,
+            vec![make_item()],
+            &ResponseMetadata::default(),
+        )
+        .await
+        .unwrap();
+    let first = store
+        .list_items("crud_tenant", &conv.conversation_id, 100, None, ItemOrder::Asc)
+        .await
+        .unwrap();
+    assert_eq!(first.len(), 1, "Responses items must be visible");
+    let snapshot = store.rehydrate_snapshot(&conv.conversation_id).await.unwrap();
+    let barrier = Arc::new(tokio::sync::Barrier::new(8));
+    let mut tasks = Vec::new();
+    for _ in 0..8 {
+        let store = Arc::clone(&store);
+        let barrier = Arc::clone(&barrier);
+        let id = conv.conversation_id.clone();
+        let item = make_item();
+        tasks.push(tokio::spawn(async move {
+            barrier.wait().await;
+            store.create_items("crud_tenant", &id, vec![item]).await
+        }));
+    }
+    for task in tasks {
+        task.await.unwrap().expect("concurrent append succeeds");
+    }
+    let after = store
+        .list_items(
+            "crud_tenant",
+            &conv.conversation_id,
+            100,
+            Some(&first[0].id),
+            ItemOrder::Asc,
+        )
+        .await
+        .unwrap();
+    assert_eq!(after.len(), 8);
+    assert!(
+        store
+            .retrieve_item("other_tenant", &conv.conversation_id, &first[0].id)
+            .await
+            .is_err()
+    );
+    store
+        .delete_item("crud_tenant", &conv.conversation_id, &first[0].id)
+        .await
+        .unwrap();
+    let stale = store
+        .persist_if_version(
+            &conv.conversation_id,
+            snapshot.version,
+            &agentic_core::utils::common::uuid7_str("resp_"),
+            None,
+            vec![],
+            &ResponseMetadata::default(),
+        )
+        .await;
+    assert!(matches!(stale, Err(StorageError::ConversationConflict { .. })));
+    store.delete("crud_tenant", &conv.conversation_id).await.unwrap();
+    assert_eq!(
+        ResponseStore::new(pool).rehydrate(&response_id).await.unwrap(),
+        vec![make_item()]
+    );
 }

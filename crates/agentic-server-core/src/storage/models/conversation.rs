@@ -1,5 +1,8 @@
 //! Conversation context and history.
 
+mod api;
+pub use api::{bump_revision_in_tx, create_with_metadata_in_tx, delete_in_tx, get_by_tenant, update_metadata};
+
 use super::super::pool::{DbPool, DbResult, DbTransaction};
 use super::item::Item;
 use crate::storage::backend::DatabaseBackend;
@@ -25,10 +28,14 @@ pub struct Conversation {
 
     /// Tenant identifier for multi-tenancy isolation.
     pub tenant_id: Option<String>,
+
+    /// Revision incremented for every change to conversation items.
+    pub revision: i64,
 }
 
 #[derive(Debug, sqlx::FromRow)]
 struct ConversationSnapshotRow {
+    revision: i64,
     latest_response_id: Option<String>,
     item_id: Option<String>,
     item_data: Option<String>,
@@ -40,6 +47,7 @@ struct ConversationSnapshotRow {
 /// Item rows and the latest persisted response captured by one database statement.
 #[derive(Debug)]
 pub struct ConversationSnapshotRows {
+    pub revision: i64,
     pub latest_response_id: Option<String>,
     pub items: Vec<Item>,
 }
@@ -95,7 +103,7 @@ pub async fn get(pool: &DbPool, id: &str) -> DbResult<Option<Conversation>> {
 /// Returns `DbResult::Err` if the database query fails or a joined item row is malformed.
 pub async fn get_snapshot(pool: &DbPool, id: &str) -> DbResult<ConversationSnapshotRows> {
     let rows = sqlx::query_as::<_, ConversationSnapshotRow>(
-        "SELECT conversations.latest_response_id, \
+        "SELECT conversations.latest_response_id, conversations.revision, \
                 items.id AS item_id, \
                 items.data AS item_data, \
                 items.created_at AS item_created_at, \
@@ -110,6 +118,7 @@ pub async fn get_snapshot(pool: &DbPool, id: &str) -> DbResult<ConversationSnaps
     .fetch_all(pool)
     .await?;
 
+    let revision = rows.first().map_or(0, |row| row.revision);
     let latest_response_id = rows.first().and_then(|row| row.latest_response_id.clone());
     let mut items = Vec::with_capacity(rows.len());
     for row in rows {
@@ -137,6 +146,7 @@ pub async fn get_snapshot(pool: &DbPool, id: &str) -> DbResult<ConversationSnaps
     }
 
     Ok(ConversationSnapshotRows {
+        revision,
         latest_response_id,
         items,
     })
@@ -188,76 +198,6 @@ pub async fn set_latest_response_in_tx(tx: &mut DbTransaction<'_>, id: &str, res
     Ok(())
 }
 
-/// Create a conversation with metadata and tenant.
-///
-/// # Errors
-/// Returns `DbResult::Err` if the database insertion fails.
-pub async fn create_with_metadata(
-    pool: &DbPool,
-    id: &str,
-    tenant_id: Option<&str>,
-    metadata: Option<&str>,
-) -> DbResult<Conversation> {
-    let now = utcnow_str();
-    sqlx::query_as::<_, Conversation>(
-        "INSERT INTO conversations (id, tenant_id, metadata, created_at) \
-         VALUES ($1, $2, $3, $4) RETURNING *",
-    )
-    .bind(id)
-    .bind(tenant_id)
-    .bind(metadata)
-    .bind(now)
-    .fetch_one(pool)
-    .await
-}
-
-/// Get a conversation by ID and tenant.
-///
-/// # Errors
-/// Returns `DbResult::Err` if the database query fails.
-pub async fn get_by_tenant(pool: &DbPool, tenant_id: &str, conversation_id: &str) -> DbResult<Option<Conversation>> {
-    sqlx::query_as::<_, Conversation>("SELECT * FROM conversations WHERE id = $1 AND tenant_id = $2")
-        .bind(conversation_id)
-        .bind(tenant_id)
-        .fetch_optional(pool)
-        .await
-}
-
-/// Update conversation metadata.
-///
-/// # Errors
-/// Returns `DbResult::Err` if the database update fails or the conversation does not exist.
-pub async fn update_metadata(
-    pool: &DbPool,
-    tenant_id: &str,
-    conversation_id: &str,
-    metadata: &str,
-) -> DbResult<Conversation> {
-    sqlx::query_as::<_, Conversation>(
-        "UPDATE conversations SET metadata = $1 \
-         WHERE id = $2 AND tenant_id = $3 \
-         RETURNING *",
-    )
-    .bind(metadata)
-    .bind(conversation_id)
-    .bind(tenant_id)
-    .fetch_one(pool)
-    .await
-}
-
-/// Delete a conversation by ID and tenant.
-///
-/// # Errors
-/// Returns `DbResult::Err` if the database query fails.
-pub async fn delete(pool: &DbPool, tenant_id: &str, conversation_id: &str) -> DbResult<u64> {
-    let result = sqlx::query("DELETE FROM conversations WHERE id = $1 AND tenant_id = $2")
-        .bind(conversation_id)
-        .bind(tenant_id)
-        .execute(pool)
-        .await?;
-    Ok(result.rows_affected())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -270,6 +210,7 @@ mod tests {
             created_at: 1_704_067_200,
             latest_response_id: None,
             tenant_id: None,
+            revision: 0,
         };
 
         assert_eq!(conversation.id, "conv_1");

@@ -288,7 +288,7 @@ mod tests {
         let handler = ConversationHandler::new(store.clone());
         let mut ctx = make_ctx(Some(&conversation.conversation_id));
         ctx.new_input_items = Vec::from(&ctx.original_request.input);
-        ctx.conversation_version = Some(ConversationVersion::Empty);
+        ctx.conversation_version = Some(ConversationVersion::default());
 
         handler.execute_turn(ctx, vec![]).await?;
 
@@ -296,8 +296,9 @@ mod tests {
         assert_eq!(snapshot.items.len(), 1);
         assert_eq!(
             snapshot.version,
-            ConversationVersion::LastResponse {
-                response_id: "resp_test".to_owned(),
+            ConversationVersion {
+                response_id: Some("resp_test".to_owned()),
+                revision: 1,
                 last_sequence: Some(0),
             }
         );
@@ -314,7 +315,7 @@ mod tests {
         let handler = ConversationHandler::new(store.clone());
         let mut ctx = make_ctx(Some(&conversation.conversation_id));
         ctx.new_input_items = Vec::from(&ctx.original_request.input);
-        ctx.conversation_version = Some(ConversationVersion::Empty);
+        ctx.conversation_version = Some(ConversationVersion::default());
         let competing_items = Vec::from(&ResponsesInput::Text("competing input".into()))
             .into_iter()
             .map(InOutItem::Input)

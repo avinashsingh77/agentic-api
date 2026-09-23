@@ -142,6 +142,7 @@ use utoipa::OpenApi;
         agentic_core::types::conversations::ItemResponse,
         agentic_core::types::conversations::ListItemsResponse,
         agentic_core::types::conversations::ConversationItem,
+        agentic_core::types::conversations::ItemOrder,
     )),
     modifiers(&SecurityAddon),
     tags(

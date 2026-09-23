@@ -1,7 +1,7 @@
 mod common;
 
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use http::StatusCode;
 use serde_json::json;
@@ -275,11 +275,11 @@ async fn test_create_item_in_conversation() {
     let item_resp = client
         .post(format!("{gw_url}/v1/conversations/{conv_id}/items"))
         .json(&json!({
-            "item": {
+            "items": [{
                 "type": "message",
                 "role": "user",
                 "content": "Hello!"
-            }
+            }]
         }))
         .send()
         .await
@@ -287,12 +287,12 @@ async fn test_create_item_in_conversation() {
 
     assert_eq!(item_resp.status(), StatusCode::OK);
     let item_body: serde_json::Value = item_resp.json().await.unwrap();
-    assert!(item_body["id"].as_str().unwrap().starts_with("item_"));
-    assert_eq!(item_body["object"], "conversation.item");
-    assert!(item_body["created_at"].as_i64().is_some());
-    assert_eq!(item_body["item"]["type"], "message");
-    assert_eq!(item_body["item"]["role"], "user");
-    assert_eq!(item_body["item"]["content"], "Hello!");
+    assert_eq!(item_body["object"], "list");
+    assert_eq!(item_body["data"].as_array().unwrap().len(), 1);
+    assert!(item_body["data"][0]["id"].as_str().unwrap().starts_with("item_"));
+    assert_eq!(item_body["data"][0]["type"], "message");
+    assert_eq!(item_body["data"][0]["role"], "user");
+    assert_eq!(item_body["data"][0]["content"][0]["text"], "Hello!");
 }
 
 #[tokio::test]
@@ -304,11 +304,11 @@ async fn test_create_item_in_nonexistent_conversation_returns_404() {
     let resp = reqwest::Client::new()
         .post(format!("{gw_url}/v1/conversations/conv_nonexistent/items"))
         .json(&json!({
-            "item": {
+            "items": [{
                 "type": "message",
                 "role": "user",
                 "content": "test"
-            }
+            }]
         }))
         .send()
         .await
@@ -353,9 +353,9 @@ async fn test_list_items_in_conversation() {
     assert_eq!(list_body["object"], "list");
     assert_eq!(list_body["data"].as_array().unwrap().len(), 3);
     assert_eq!(list_body["has_more"], false);
-    assert_eq!(list_body["data"][0]["item"]["content"], "First");
-    assert_eq!(list_body["data"][1]["item"]["content"], "Second");
-    assert_eq!(list_body["data"][2]["item"]["content"], "Third");
+    assert_eq!(list_body["data"][0]["content"][0]["text"], "Third");
+    assert_eq!(list_body["data"][1]["content"][0]["text"], "Second");
+    assert_eq!(list_body["data"][2]["content"][0]["text"], "First");
 }
 
 #[tokio::test]
@@ -368,7 +368,7 @@ async fn test_list_items_pagination() {
 
     // Create conversation with many items
     let mut items = Vec::new();
-    for i in 0..25 {
+    for i in 0..20 {
         items.push(json!({
             "type": "message",
             "role": if i % 2 == 0 { "user" } else { "assistant" },
@@ -409,7 +409,7 @@ async fn test_list_items_pagination() {
 
     let page2_body: serde_json::Value = page2_resp.json().await.unwrap();
     assert_eq!(page2_body["data"].as_array().unwrap().len(), 10);
-    assert_eq!(page2_body["has_more"], true);
+    assert_eq!(page2_body["has_more"], false);
 }
 
 #[tokio::test]
@@ -466,7 +466,7 @@ async fn test_retrieve_item() {
     assert_eq!(retrieve_resp.status(), StatusCode::OK);
     let retrieve_body: serde_json::Value = retrieve_resp.json().await.unwrap();
     assert_eq!(retrieve_body["id"], item_id);
-    assert_eq!(retrieve_body["item"]["content"], "Test message");
+    assert_eq!(retrieve_body["content"][0]["text"], "Test message");
 }
 
 #[tokio::test]
@@ -535,9 +535,9 @@ async fn test_delete_item() {
 
     assert_eq!(delete_resp.status(), StatusCode::OK);
     let delete_body: serde_json::Value = delete_resp.json().await.unwrap();
-    assert_eq!(delete_body["id"], item_id);
-    assert_eq!(delete_body["object"], "conversation.item.deleted");
-    assert_eq!(delete_body["deleted"], true);
+    assert_eq!(delete_body["id"], conv_id);
+    assert_eq!(delete_body["object"], "conversation");
+    assert!(delete_body["created_at"].is_number());
 
     // Verify it's gone
     let retrieve_resp = client
@@ -623,3 +623,6 @@ async fn test_item_belongs_to_conversation_validation() {
 
     assert_eq!(wrong_conv_resp.status(), StatusCode::NOT_FOUND);
 }
+
+#[path = "conversations/regressions.rs"]
+mod regressions;

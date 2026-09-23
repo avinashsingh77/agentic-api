@@ -1,9 +1,17 @@
 //! Types for the OpenAI-compatible Conversations API.
 
-use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
+
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+use super::event::MessageStatus;
+use super::io::{InputContent, InputMessageContent, InputTextContent};
 use serde_json::Value;
 
 use super::io::{InputItem, OutputItem};
+
+/// String metadata attached to a conversation.
+pub type ConversationMetadata = BTreeMap<String, String>;
 
 /// Request to create a new conversation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -11,7 +19,7 @@ use super::io::{InputItem, OutputItem};
 pub struct CreateConversationRequest {
     /// Optional metadata as a JSON object.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub metadata: Option<Value>,
+    pub metadata: Option<ConversationMetadata>,
 
     /// Optional initial items to add to the conversation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -23,7 +31,7 @@ pub struct CreateConversationRequest {
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct UpdateConversationRequest {
     /// Metadata as a JSON object.
-    pub metadata: Value,
+    pub metadata: ConversationMetadata,
 }
 
 /// Response for a conversation resource.
@@ -40,20 +48,20 @@ pub struct ConversationResponse {
     pub created_at: i64,
 
     /// Metadata as a JSON object.
-    #[serde(default, skip_serializing_if = "Value::is_null")]
-    pub metadata: Value,
+    #[serde(default)]
+    pub metadata: ConversationMetadata,
 }
 
-/// Request to create a new item in a conversation.
+/// Request to append up to 20 items to a conversation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct CreateItemRequest {
-    /// The item to add (input or output).
-    pub item: ConversationItem,
+    /// Items to append in the supplied order.
+    pub items: Vec<ConversationItem>,
 }
 
 /// Response for listing items with pagination.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ListItemsResponse {
     /// Object type, always "list".
@@ -66,40 +74,85 @@ pub struct ListItemsResponse {
     pub has_more: bool,
 
     /// ID of the first item in this page.
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub first_id: Option<String>,
 
     /// ID of the last item in this page.
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub last_id: Option<String>,
 }
 
-/// Response for a single conversation item.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+/// A conversation item with its storage identity and flattened public payload.
+#[derive(Debug, Clone)]
 pub struct ItemResponse {
-    /// Unique item identifier.
     pub id: String,
-
-    /// Object type, always "conversation.item".
-    pub object: String,
-
-    /// Creation timestamp as Unix timestamp in seconds.
-    pub created_at: i64,
-
-    /// The item content (input or output).
     pub item: ConversationItem,
 }
 
-/// A conversation item (input or output).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg(feature = "openapi")]
+impl utoipa::PartialSchema for ItemResponse {
+    fn schema() -> utoipa::openapi::RefOr<utoipa::openapi::schema::Schema> {
+        use utoipa::openapi::schema::{AllOfBuilder, Type};
+        use utoipa::openapi::{ObjectBuilder, Ref};
+        AllOfBuilder::new()
+            .item(
+                ObjectBuilder::new()
+                    .property("id", ObjectBuilder::new().schema_type(Type::String))
+                    .required("id"),
+            )
+            .item(Ref::from_schema_name("ConversationItem"))
+            .into()
+    }
+}
+
+#[cfg(feature = "openapi")]
+impl utoipa::ToSchema for ItemResponse {}
+
+impl Serialize for ItemResponse {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut value = serde_json::to_value(&self.item).map_err(serde::ser::Error::custom)?;
+        let object = value
+            .as_object_mut()
+            .ok_or_else(|| serde::ser::Error::custom("item must be an object"))?;
+        // Stored Responses output may retain an upstream ID. The public resource
+        // must use the same ID as its retrieval URL and pagination cursor, once.
+        object.insert("id".to_owned(), Value::String(self.id.clone()));
+        value.serialize(serializer)
+    }
+}
+
+/// A supported conversation input or output item.
+#[derive(Debug, Clone, Serialize)]
 #[serde(untagged)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub enum ConversationItem {
-    /// Input item (message, tool call, etc.).
     Input(InputItem),
-    /// Output item (message, tool result, etc.).
     Output(OutputItem),
+}
+
+impl<'de> Deserialize<'de> for ConversationItem {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = Value::deserialize(deserializer)?;
+        let input = InputItem::deserialize(&value).map_err(serde::de::Error::custom)?;
+        if !matches!(input, InputItem::Unknown) {
+            return Ok(Self::Input(input));
+        }
+        // InputItem's forward-compatible fallback must not consume output-only
+        // kinds such as web_search_call and mcp_call and discard their payloads.
+        let output = OutputItem::deserialize(value).map_err(serde::de::Error::custom)?;
+        if matches!(output, OutputItem::Unknown) {
+            return Err(serde::de::Error::custom("unsupported conversation item type"));
+        }
+        Ok(Self::Output(output))
+    }
+}
+
+/// Ordering for conversation item pages.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub enum ItemOrder {
+    Asc,
+    #[default]
+    Desc,
 }
 
 /// Response for successful deletion.
@@ -119,26 +172,33 @@ pub struct DeletedResponse {
 impl ConversationResponse {
     /// Create a new conversation response.
     #[must_use]
-    pub fn new(id: String, created_at: i64, metadata: Option<Value>) -> Self {
+    pub fn new(id: String, created_at: i64, metadata: Option<ConversationMetadata>) -> Self {
         Self {
             id,
             object: "conversation".to_string(),
             created_at,
-            metadata: metadata.unwrap_or(Value::Null),
+            metadata: metadata.unwrap_or_default(),
         }
     }
 }
 
 impl ItemResponse {
-    /// Create a new item response.
+    /// Build the public resource, expanding shorthand message content.
     #[must_use]
-    pub fn new(id: String, created_at: i64, item: ConversationItem) -> Self {
-        Self {
-            id,
-            object: "conversation.item".to_string(),
-            created_at,
-            item,
+    pub fn new(id: String, mut item: ConversationItem) -> Self {
+        if let ConversationItem::Input(InputItem::Message(message)) = &mut item {
+            message.status.get_or_insert(MessageStatus::Completed);
+            if let InputMessageContent::Text(text) = &mut message.content {
+                let content = InputTextContent::new(std::mem::take(text));
+                let part = if message.role == "assistant" {
+                    InputContent::OutputText(content)
+                } else {
+                    InputContent::InputText(content)
+                };
+                message.content = InputMessageContent::Parts(vec![part]);
+            }
         }
+        Self { id, item }
     }
 }
 
@@ -169,166 +229,7 @@ impl DeletedResponse {
             deleted: true,
         }
     }
-
-    /// Create a deleted item response.
-    #[must_use]
-    pub fn item(id: String) -> Self {
-        Self {
-            id,
-            object: "conversation.item.deleted".to_string(),
-            deleted: true,
-        }
-    }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
-
-    #[test]
-    fn test_conversation_response_new() {
-        let resp = ConversationResponse::new("conv_123".to_string(), 1_704_067_200, Some(json!({"user": "alice"})));
-
-        assert_eq!(resp.id, "conv_123");
-        assert_eq!(resp.object, "conversation");
-        assert_eq!(resp.created_at, 1_704_067_200);
-        assert_eq!(resp.metadata, json!({"user": "alice"}));
-    }
-
-    #[test]
-    fn test_conversation_response_null_metadata() {
-        let resp = ConversationResponse::new("conv_123".to_string(), 1_704_067_200, None);
-
-        assert_eq!(resp.metadata, Value::Null);
-    }
-
-    #[test]
-    fn test_list_items_response_ids() {
-        let items = vec![
-            ItemResponse {
-                id: "item_1".to_string(),
-                object: "conversation.item".to_string(),
-                created_at: 1_704_067_200,
-                item: ConversationItem::Input(InputItem::Unknown),
-            },
-            ItemResponse {
-                id: "item_2".to_string(),
-                object: "conversation.item".to_string(),
-                created_at: 1_704_067_300,
-                item: ConversationItem::Input(InputItem::Unknown),
-            },
-        ];
-
-        let resp = ListItemsResponse::new(items, false);
-
-        assert_eq!(resp.object, "list");
-        assert_eq!(resp.first_id, Some("item_1".to_string()));
-        assert_eq!(resp.last_id, Some("item_2".to_string()));
-        assert!(!resp.has_more);
-    }
-
-    #[test]
-    fn test_deleted_response_conversation() {
-        let resp = DeletedResponse::conversation("conv_123".to_string());
-
-        assert_eq!(resp.id, "conv_123");
-        assert_eq!(resp.object, "conversation.deleted");
-        assert!(resp.deleted);
-    }
-
-    #[test]
-    fn test_deleted_response_item() {
-        let resp = DeletedResponse::item("item_123".to_string());
-
-        assert_eq!(resp.id, "item_123");
-        assert_eq!(resp.object, "conversation.item.deleted");
-        assert!(resp.deleted);
-    }
-
-    #[test]
-    fn test_create_conversation_request_serialization() {
-        let req = CreateConversationRequest {
-            metadata: Some(json!({"key": "value"})),
-            items: None,
-        };
-
-        let json = serde_json::to_string(&req).expect("serialize");
-        assert!(json.contains("metadata"));
-        assert!(!json.contains("items")); // Should skip None
-    }
-
-    #[test]
-    fn test_update_conversation_request() {
-        let req = UpdateConversationRequest {
-            metadata: json!({"status": "active"}),
-        };
-
-        let json = serde_json::to_string(&req).expect("serialize");
-        assert!(json.contains("status"));
-        assert!(json.contains("active"));
-    }
-
-    #[test]
-    fn test_item_response_serialization_nested() {
-        // Use a simple unknown item for serialization test
-        let item = ConversationItem::Input(InputItem::Unknown);
-
-        let resp = ItemResponse::new("item_123".to_string(), 1_704_067_200, item);
-        let json_value = serde_json::to_value(&resp).expect("serialize");
-
-        // Should have nested structure, not flattened
-        assert_eq!(json_value["id"], "item_123");
-        assert_eq!(json_value["object"], "conversation.item");
-        assert_eq!(json_value["created_at"], 1_704_067_200);
-        assert!(json_value["item"].is_object());
-    }
-
-    #[test]
-    fn test_create_item_request_deserialization_nested() {
-        let json_str = r#"{
-            "item": {
-                "type": "message",
-                "role": "user",
-                "content": "Hello"
-            }
-        }"#;
-
-        let req: CreateItemRequest = serde_json::from_str(json_str).expect("deserialize");
-
-        // Verify it's wrapped in an item field, not flattened
-        match req.item {
-            ConversationItem::Input(_) => {
-                // Successfully deserialized with nested structure
-            }
-            ConversationItem::Output(_) => panic!("Expected InputItem"),
-        }
-    }
-
-    #[test]
-    fn test_item_response_json_structure() {
-        // Test that ItemResponse produces the expected JSON structure
-        let json_str = r#"{
-            "id": "item_123",
-            "object": "conversation.item",
-            "created_at": 1704067200,
-            "item": {
-                "type": "message",
-                "role": "assistant",
-                "content": "Test"
-            }
-        }"#;
-
-        let resp: ItemResponse = serde_json::from_str(json_str).expect("deserialize");
-        assert_eq!(resp.id, "item_123");
-        assert_eq!(resp.object, "conversation.item");
-        assert_eq!(resp.created_at, 1_704_067_200);
-
-        // Re-serialize and verify structure is preserved
-        let json_value = serde_json::to_value(&resp).expect("serialize");
-        assert!(
-            json_value.get("item").is_some(),
-            "item field must be present and not flattened"
-        );
-    }
-}
+mod tests;
