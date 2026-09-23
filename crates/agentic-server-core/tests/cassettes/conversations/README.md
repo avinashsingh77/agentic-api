@@ -96,7 +96,7 @@ cargo test conversations_api_cassette_test
 ## Status
 
 - [ ] OpenAI reference cassettes recorded
-- [ ] Gateway cassettes recorded  
+- [ ] Gateway cassettes recorded
 - [x] Recording infrastructure implemented
 - [x] Replay tests implemented
 
