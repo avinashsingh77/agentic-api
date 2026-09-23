@@ -3,34 +3,132 @@
 use super::{DbPool, DbResult, DbTransaction, Item};
 use crate::types::conversations::ItemOrder;
 
-/// List a page using a cursor sequence and the same ordering for filtering and sorting.
+/// List a page using keyset pagination with (seq, id) ordering.
+///
+/// Resolves the cursor to get its (seq, id) tuple, then paginates using compound predicates
+/// that match the ordering keys to prevent skipping or repeating items.
 ///
 /// # Errors
-/// Returns an error if the query fails.
+/// Returns an error if the query fails or cursor not found in conversation.
+#[allow(clippy::too_many_lines)]
 pub async fn list_for_conversation(
     pool: &DbPool,
     tenant_id: &str,
     conversation_id: &str,
     limit: i64,
-    after_sequence: Option<i64>,
+    after_id: Option<&str>,
     order: ItemOrder,
 ) -> DbResult<Vec<Item>> {
-    let (comparison, direction) = match order {
-        ItemOrder::Asc => (">", "ASC"),
-        ItemOrder::Desc => ("<", "DESC"),
+    let order_clause = match order {
+        ItemOrder::Desc => "ORDER BY items.seq DESC, items.id DESC",
+        ItemOrder::Asc => "ORDER BY items.seq ASC, items.id ASC",
     };
-    let sql = format!(
-        "SELECT items.* FROM items JOIN conversations ON conversations.id = items.conversation_id \
-         WHERE conversations.id = $1 AND conversations.tenant_id = $2 \
-         AND (CAST($3 AS BIGINT) IS NULL OR items.seq {comparison} $3) ORDER BY items.seq {direction} LIMIT $4"
-    );
-    sqlx::query_as(&sql)
+
+    if let Some(cursor_id) = after_id {
+        // Resolve cursor to get its (seq, id) tuple within this conversation and tenant
+        let cursor: Option<(Option<i64>, String)> = sqlx::query_as(
+            "SELECT items.seq, items.id FROM items \
+             JOIN conversations ON conversations.id = items.conversation_id \
+             WHERE conversations.id = $1 AND conversations.tenant_id = $2 AND items.id = $3",
+        )
         .bind(conversation_id)
         .bind(tenant_id)
-        .bind(after_sequence)
+        .bind(cursor_id)
+        .fetch_optional(pool)
+        .await?;
+
+        let Some((cursor_seq, cursor_id_value)) = cursor else {
+            // Cursor not found in this conversation - return empty
+            return Ok(Vec::new());
+        };
+
+        // Paginate using (seq, id) keyset - handles NULL seq correctly
+        if order == ItemOrder::Desc {
+            // Descending: (seq < cursor_seq) OR (seq = cursor_seq AND id < cursor_id)
+            if let Some(seq) = cursor_seq {
+                sqlx::query_as(&format!(
+                    "SELECT items.* FROM items \
+                     JOIN conversations ON conversations.id = items.conversation_id \
+                     WHERE conversations.id = $1 AND conversations.tenant_id = $2 \
+                     AND ((items.seq < $3) OR (items.seq = $3 AND items.id < $4)) \
+                     {order_clause} \
+                     LIMIT $5"
+                ))
+                .bind(conversation_id)
+                .bind(tenant_id)
+                .bind(seq)
+                .bind(&cursor_id_value)
+                .bind(limit)
+                .fetch_all(pool)
+                .await
+            } else {
+                // cursor has NULL seq - only items with NULL seq and id < cursor_id
+                sqlx::query_as(&format!(
+                    "SELECT items.* FROM items \
+                     JOIN conversations ON conversations.id = items.conversation_id \
+                     WHERE conversations.id = $1 AND conversations.tenant_id = $2 \
+                     AND items.seq IS NULL AND items.id < $3 \
+                     {order_clause} \
+                     LIMIT $4"
+                ))
+                .bind(conversation_id)
+                .bind(tenant_id)
+                .bind(&cursor_id_value)
+                .bind(limit)
+                .fetch_all(pool)
+                .await
+            }
+        } else {
+            // Ascending: (seq > cursor_seq) OR (seq = cursor_seq AND id > cursor_id)
+            if let Some(seq) = cursor_seq {
+                sqlx::query_as(&format!(
+                    "SELECT items.* FROM items \
+                     JOIN conversations ON conversations.id = items.conversation_id \
+                     WHERE conversations.id = $1 AND conversations.tenant_id = $2 \
+                     AND ((items.seq > $3) OR (items.seq = $3 AND items.id > $4)) \
+                     {order_clause} \
+                     LIMIT $5"
+                ))
+                .bind(conversation_id)
+                .bind(tenant_id)
+                .bind(seq)
+                .bind(&cursor_id_value)
+                .bind(limit)
+                .fetch_all(pool)
+                .await
+            } else {
+                // cursor has NULL seq - return items with non-NULL seq, or NULL seq with id > cursor_id
+                sqlx::query_as(&format!(
+                    "SELECT items.* FROM items \
+                     JOIN conversations ON conversations.id = items.conversation_id \
+                     WHERE conversations.id = $1 AND conversations.tenant_id = $2 \
+                     AND (items.seq IS NOT NULL OR (items.seq IS NULL AND items.id > $3)) \
+                     {order_clause} \
+                     LIMIT $4"
+                ))
+                .bind(conversation_id)
+                .bind(tenant_id)
+                .bind(&cursor_id_value)
+                .bind(limit)
+                .fetch_all(pool)
+                .await
+            }
+        }
+    } else {
+        // No cursor - start from beginning
+        sqlx::query_as(&format!(
+            "SELECT items.* FROM items \
+             JOIN conversations ON conversations.id = items.conversation_id \
+             WHERE conversations.id = $1 AND conversations.tenant_id = $2 \
+             {order_clause} \
+             LIMIT $3"
+        ))
+        .bind(conversation_id)
+        .bind(tenant_id)
         .bind(limit)
         .fetch_all(pool)
         .await
+    }
 }
 
 /// Get an item through its conversation, including items written by Responses persistence.

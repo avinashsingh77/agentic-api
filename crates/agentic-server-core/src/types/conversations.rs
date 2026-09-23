@@ -229,6 +229,16 @@ impl DeletedResponse {
             deleted: true,
         }
     }
+
+    /// Create a deleted item response.
+    #[must_use]
+    pub fn item(id: String) -> Self {
+        Self {
+            id,
+            object: "conversation.item.deleted".to_string(),
+            deleted: true,
+        }
+    }
 }
 
 #[cfg(test)]

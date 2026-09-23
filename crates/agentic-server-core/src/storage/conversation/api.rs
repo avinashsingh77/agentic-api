@@ -101,17 +101,8 @@ impl ConversationStore {
         order: ItemOrder,
     ) -> StoreResult<Vec<Item>> {
         self.retrieve(tenant_id, id).await?;
-        let after_sequence = match after {
-            Some(cursor) => {
-                let row = self.retrieve_item(tenant_id, id, cursor).await?;
-                Some(row.seq.ok_or_else(|| StorageError::InvalidConversationSequence {
-                    conversation_id: id.to_owned(),
-                    item_id: cursor.to_owned(),
-                })?)
-            }
-            None => None,
-        };
-        Ok(item::list_for_conversation(self.pool()?, tenant_id, id, limit, after_sequence, order).await?)
+        // Pass the cursor ID directly - list_for_conversation will resolve it to (seq, id)
+        Ok(item::list_for_conversation(self.pool()?, tenant_id, id, limit, after, order).await?)
     }
 
     /// Retrieve one item belonging to the authorized conversation.

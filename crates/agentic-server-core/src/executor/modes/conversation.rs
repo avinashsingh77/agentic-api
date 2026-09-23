@@ -1,9 +1,10 @@
 //! Conversation storage handler — owns all conversation store operations.
 
 use crate::storage::{
-    ConversationData, ConversationSnapshot, ConversationStore, ConversationVersion, InOutItem, ResponseMetadata,
-    StorageError,
+    ConversationData, ConversationSnapshot, ConversationStore, ConversationVersion, InOutItem, Item,
+    ResponseMetadata, StorageError,
 };
+use crate::types::conversations::{ConversationItem, ItemResponse, ListItemsResponse};
 use crate::types::io::OutputItem;
 
 use crate::executor::error::{ExecutorError, ExecutorResult};
@@ -22,8 +23,10 @@ impl ConversationHandler {
     }
 
     /// Returns a reference to the underlying conversation store.
+    ///
+    /// Private to enforce business logic through typed operations.
     #[must_use]
-    pub fn store(&self) -> &ConversationStore {
+    fn store(&self) -> &ConversationStore {
         &self.store
     }
 
@@ -117,6 +120,130 @@ impl ConversationHandler {
             .map_err(ExecutorError::Storage)
     }
 
+    /// Creates items in a conversation, returning typed responses.
+    ///
+    /// # Errors
+    /// Returns `ExecutorError` if conversation not found, items invalid, or database operation fails.
+    pub async fn create_items(
+        &self,
+        tenant_id: &str,
+        conversation_id: &str,
+        items: Vec<ConversationItem>,
+    ) -> ExecutorResult<Vec<ItemResponse>> {
+        if items.is_empty() || items.len() > 20 {
+            return Err(ExecutorError::InvalidRequest(
+                "items must contain between 1 and 20 items".into(),
+            ));
+        }
+
+        let stored_items: Vec<InOutItem> = items
+            .into_iter()
+            .map(|item| match item {
+                ConversationItem::Input(input) => InOutItem::Input(input),
+                ConversationItem::Output(output) => InOutItem::Output(output),
+            })
+            .collect();
+
+        let created = self
+            .store
+            .create_items(tenant_id, conversation_id, stored_items)
+            .await
+            .map_err(ExecutorError::Storage)?;
+
+        // Perform fallible conversion - propagate errors instead of silently dropping items
+        let mut item_responses = Vec::with_capacity(created.len());
+        for db_item in created {
+            let conversation_item = convert_item(db_item.clone())?;
+            item_responses.push(ItemResponse::new(db_item.id, conversation_item));
+        }
+
+        Ok(item_responses)
+    }
+
+    /// Lists items in a conversation with pagination.
+    ///
+    /// # Errors
+    /// Returns `ExecutorError` if conversation not found or database query fails.
+    pub async fn list_items(
+        &self,
+        tenant_id: &str,
+        conversation_id: &str,
+        limit: i64,
+        after: Option<&str>,
+        order: &str,
+    ) -> ExecutorResult<ListItemsResponse> {
+        // Validate order parameter
+        if order != "asc" && order != "desc" {
+            return Err(ExecutorError::InvalidRequest("order must be 'asc' or 'desc'".into()));
+        }
+
+        let limit = limit.clamp(1, 100);
+        let order_enum = if order == "desc" {
+            crate::types::conversations::ItemOrder::Desc
+        } else {
+            crate::types::conversations::ItemOrder::Asc
+        };
+
+        // Fetch limit + 1 to determine if there are more items
+        let mut items = self
+            .store
+            .list_items(tenant_id, conversation_id, limit + 1, after, order_enum)
+            .await
+            .map_err(ExecutorError::Storage)?;
+
+        // Safe: limit is clamped to [1, 100], far below usize range
+        #[allow(clippy::cast_possible_wrap)]
+        let has_more = (items.len() as i64) > limit;
+        if has_more {
+            items.pop(); // Remove the extra item
+        }
+
+        // Perform fallible conversion - propagate errors instead of silently dropping items
+        let mut item_responses = Vec::with_capacity(items.len());
+        for db_item in items {
+            let conversation_item = convert_item(db_item.clone())?;
+            item_responses.push(ItemResponse::new(db_item.id, conversation_item));
+        }
+
+        Ok(ListItemsResponse::new(item_responses, has_more))
+    }
+
+    /// Retrieves a single item by ID.
+    ///
+    /// # Errors
+    /// Returns `ExecutorError` if item not found or database query fails.
+    pub async fn retrieve_item(
+        &self,
+        tenant_id: &str,
+        conversation_id: &str,
+        item_id: &str,
+    ) -> ExecutorResult<ItemResponse> {
+        let db_item = self
+            .store
+            .retrieve_item(tenant_id, conversation_id, item_id)
+            .await
+            .map_err(ExecutorError::Storage)?;
+
+        let conversation_item = convert_item(db_item.clone())?;
+        Ok(ItemResponse::new(db_item.id, conversation_item))
+    }
+
+    /// Deletes an item by ID, returning the updated conversation.
+    ///
+    /// # Errors
+    /// Returns `ExecutorError` if item not found or database operation fails.
+    pub async fn delete_item(
+        &self,
+        tenant_id: &str,
+        conversation_id: &str,
+        item_id: &str,
+    ) -> ExecutorResult<ConversationData> {
+        self.store
+            .delete_item(tenant_id, conversation_id, item_id)
+            .await
+            .map_err(ExecutorError::Storage)
+    }
+
     /// Persists one conversation turn — only the new items from this turn.
     ///
     /// Takes `ctx` and `output_items` by value so fields can be moved directly
@@ -171,6 +298,21 @@ impl ConversationHandler {
                 source @ StorageError::ConversationConflict { .. } => ExecutorError::ConversationLocked { source },
                 other => ExecutorError::Storage(other),
             })
+    }
+}
+
+/// Converts a stored Item to a ConversationItem with fallible error handling.
+///
+/// # Errors
+/// Returns `ExecutorError` if the stored item cannot be deserialized.
+fn convert_item(item: Item) -> ExecutorResult<ConversationItem> {
+    let inout = item.as_inout().ok_or_else(|| {
+        ExecutorError::InvalidRequest("Failed to deserialize stored item".into())
+    })?;
+
+    match inout {
+        InOutItem::Input(input) => Ok(ConversationItem::Input(input)),
+        InOutItem::Output(output) => Ok(ConversationItem::Output(output)),
     }
 }
 
