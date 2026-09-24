@@ -4,7 +4,7 @@ use crate::storage::{
     ConversationData, ConversationSnapshot, ConversationStore, ConversationVersion, InOutItem, Item, ResponseMetadata,
     StorageError,
 };
-use crate::types::conversations::{ConversationItem, ItemResponse, ListItemsResponse};
+use crate::types::conversations::{ConversationItem, ConversationMetadata, ItemResponse, ListItemsResponse};
 use crate::types::io::OutputItem;
 
 use crate::executor::error::{ExecutorError, ExecutorResult};
@@ -20,16 +20,6 @@ impl ConversationHandler {
     #[must_use]
     pub fn new(store: ConversationStore) -> Self {
         Self { store }
-    }
-
-    /// Returns a reference to the underlying conversation store.
-    ///
-    /// **For conversation-level operations only.** Item operations (create, list,
-    /// retrieve, delete) should use the typed methods on `ConversationHandler` to
-    /// enforce business logic and proper error handling.
-    #[must_use]
-    pub fn store(&self) -> &ConversationStore {
-        &self.store
     }
 
     /// Gets an existing conversation or creates one.
@@ -70,6 +60,66 @@ impl ConversationHandler {
     /// Returns `ExecutorError` if the store is disabled or the database query fails.
     pub async fn create(&self) -> ExecutorResult<ConversationData> {
         self.store.create().await.map_err(ExecutorError::Storage)
+    }
+
+    /// Creates a tenant-owned conversation with optional metadata and initial history.
+    ///
+    /// # Errors
+    /// Returns an error if too many items are supplied or storage fails.
+    pub async fn create_with_metadata_and_items(
+        &self,
+        tenant_id: &str,
+        metadata: Option<ConversationMetadata>,
+        items: Vec<ConversationItem>,
+    ) -> ExecutorResult<ConversationData> {
+        if items.len() > 20 {
+            return Err(ExecutorError::InvalidRequest(
+                "a conversation accepts at most 20 initial items".into(),
+            ));
+        }
+        let items = items.into_iter().map(into_stored_item).collect();
+        self.store
+            .create_with_metadata_and_items(Some(tenant_id), metadata, items)
+            .await
+            .map_err(ExecutorError::Storage)
+    }
+
+    /// Retrieves a tenant-owned conversation.
+    ///
+    /// # Errors
+    /// Returns an error if the conversation does not exist or storage fails.
+    pub async fn retrieve(&self, tenant_id: &str, conversation_id: &str) -> ExecutorResult<ConversationData> {
+        self.store
+            .retrieve(tenant_id, conversation_id)
+            .await
+            .map_err(ExecutorError::Storage)
+    }
+
+    /// Updates metadata on a tenant-owned conversation.
+    ///
+    /// # Errors
+    /// Returns an error if the conversation does not exist or storage fails.
+    pub async fn update_metadata(
+        &self,
+        tenant_id: &str,
+        conversation_id: &str,
+        metadata: ConversationMetadata,
+    ) -> ExecutorResult<ConversationData> {
+        self.store
+            .update_metadata(tenant_id, conversation_id, metadata)
+            .await
+            .map_err(ExecutorError::Storage)
+    }
+
+    /// Deletes a tenant-owned conversation.
+    ///
+    /// # Errors
+    /// Returns an error if the conversation does not exist or storage fails.
+    pub async fn delete(&self, tenant_id: &str, conversation_id: &str) -> ExecutorResult<()> {
+        self.store
+            .delete(tenant_id, conversation_id)
+            .await
+            .map_err(ExecutorError::Storage)
     }
 
     /// Loads all history items for the conversation referenced by the request.
@@ -138,13 +188,7 @@ impl ConversationHandler {
             ));
         }
 
-        let stored_items: Vec<InOutItem> = items
-            .into_iter()
-            .map(|item| match item {
-                ConversationItem::Input(input) => InOutItem::Input(input),
-                ConversationItem::Output(output) => InOutItem::Output(output),
-            })
-            .collect();
+        let stored_items: Vec<InOutItem> = items.into_iter().map(into_stored_item).collect();
 
         let created = self
             .store
@@ -315,6 +359,13 @@ fn convert_item(item: &Item) -> ExecutorResult<ConversationItem> {
     match io_item {
         InOutItem::Input(item_input) => Ok(ConversationItem::Input(item_input)),
         InOutItem::Output(item_output) => Ok(ConversationItem::Output(item_output)),
+    }
+}
+
+fn into_stored_item(item: ConversationItem) -> InOutItem {
+    match item {
+        ConversationItem::Input(input) => InOutItem::Input(input),
+        ConversationItem::Output(output) => InOutItem::Output(output),
     }
 }
 

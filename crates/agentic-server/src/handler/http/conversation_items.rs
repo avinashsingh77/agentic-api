@@ -10,7 +10,7 @@ use agentic_core::types::ConversationResponse;
 use agentic_core::types::{CreateItemRequest, ItemResponse, ListItemsResponse};
 
 use super::super::common::{error_response, executor_error_response, extract_json, read_bytes};
-use super::conversations::{conversation_response, extract_tenant_id};
+use super::conversations::{DEFAULT_TENANT_ID, conversation_response};
 use crate::app::AppState;
 
 /// Query parameters for listing conversation items.
@@ -28,8 +28,9 @@ pub struct ListItemsQuery {
     #[serde(default = "default_order")]
     pub order: String,
 
-    /// Additional data to include in the response. Currently unsupported - will return error if specified.
-    pub include: Option<Vec<String>>,
+    /// Optional output expansion, encoded as `include[]=value` by `OpenAI` clients.
+    #[serde(alias = "include[]")]
+    pub include: Option<String>,
 }
 
 fn default_limit() -> i64 {
@@ -56,11 +57,6 @@ fn default_order() -> String {
     tag = "conversations",
 ))]
 pub async fn create_item(State(state): State<AppState>, Path(conversation_id): Path<String>, req: Request) -> Response {
-    let tenant_id = match extract_tenant_id(&req) {
-        Ok(id) => id,
-        Err(error) => return error,
-    };
-
     let (_, body) = req.into_parts();
     let bytes = match read_bytes(body, state.max_request_body_size).await {
         Ok(bytes) => bytes,
@@ -75,7 +71,7 @@ pub async fn create_item(State(state): State<AppState>, Path(conversation_id): P
     match state
         .exec_ctx
         .conv_handler
-        .create_items(&tenant_id, &conversation_id, request.items)
+        .create_items(DEFAULT_TENANT_ID, &conversation_id, request.items)
         .await
     {
         Ok(item_responses) => {
@@ -105,13 +101,7 @@ pub async fn list_items(
     State(state): State<AppState>,
     Path(conversation_id): Path<String>,
     Query(query): Query<ListItemsQuery>,
-    req: Request,
 ) -> Response {
-    let tenant_id = match extract_tenant_id(&req) {
-        Ok(id) => id,
-        Err(error) => return error,
-    };
-
     // Validate limit parameter
     if query.limit < 1 || query.limit > 100 {
         return error_response(
@@ -130,22 +120,21 @@ pub async fn list_items(
         );
     }
 
-    // Reject unsupported include values
-    if let Some(ref include) = query.include {
-        if !include.is_empty() {
-            return error_response(
-                StatusCode::BAD_REQUEST,
-                "invalid_request",
-                "include parameter is not currently supported",
-            );
-        }
+    // Text output logprobs are already present in stored message items. Other
+    // include expansions need their own data sources before they can be served.
+    if query
+        .include
+        .as_deref()
+        .is_some_and(|value| value != "message.output_text.logprobs")
+    {
+        return error_response(StatusCode::BAD_REQUEST, "invalid_request", "unsupported include value");
     }
 
     match state
         .exec_ctx
         .conv_handler
         .list_items(
-            &tenant_id,
+            DEFAULT_TENANT_ID,
             &conversation_id,
             query.limit,
             query.after.as_deref(),
@@ -175,17 +164,11 @@ pub async fn list_items(
 pub async fn retrieve_item(
     State(state): State<AppState>,
     Path((conversation_id, item_id)): Path<(String, String)>,
-    req: Request,
 ) -> Response {
-    let tenant_id = match extract_tenant_id(&req) {
-        Ok(id) => id,
-        Err(error) => return error,
-    };
-
     match state
         .exec_ctx
         .conv_handler
-        .retrieve_item(&tenant_id, &conversation_id, &item_id)
+        .retrieve_item(DEFAULT_TENANT_ID, &conversation_id, &item_id)
         .await
     {
         Ok(response) => axum::Json(response).into_response(),
@@ -210,17 +193,11 @@ pub async fn retrieve_item(
 pub async fn delete_item(
     State(state): State<AppState>,
     Path((conversation_id, item_id)): Path<(String, String)>,
-    req: Request,
 ) -> Response {
-    let tenant_id = match extract_tenant_id(&req) {
-        Ok(id) => id,
-        Err(error) => return error,
-    };
-
     match state
         .exec_ctx
         .conv_handler
-        .delete_item(&tenant_id, &conversation_id, &item_id)
+        .delete_item(DEFAULT_TENANT_ID, &conversation_id, &item_id)
         .await
     {
         Ok(conversation) => conversation_response(conversation),

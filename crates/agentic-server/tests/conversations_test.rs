@@ -52,6 +52,41 @@ async fn test_state_with_storage(llm_url: &str) -> AppState {
 }
 
 #[tokio::test]
+async fn test_create_conversation_preserves_store_true_contract() {
+    let (llm_url, _llm) = spawn_mock_llm().await;
+    let state = test_state_with_storage(&llm_url).await;
+    let (gateway_url, _gateway) = spawn_gateway(state).await;
+    let client = reqwest::Client::new();
+
+    let created = client
+        .post(format!("{gateway_url}/v1/conversations"))
+        .json(&json!({"store": true}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(created.status(), StatusCode::OK);
+    let body: serde_json::Value = created.json().await.unwrap();
+    let id = body["id"].as_str().unwrap();
+    assert_eq!(body["object"], "conversation");
+    assert_eq!(body["metadata"], json!({}));
+
+    let items = client
+        .get(format!("{gateway_url}/v1/conversations/{id}/items"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(items.status(), StatusCode::OK);
+
+    let rejected = client
+        .post(format!("{gateway_url}/v1/conversations"))
+        .json(&json!({"store": false}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(rejected.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
 async fn test_create_conversation_with_metadata() {
     let (llm_url, _h1) = spawn_mock_llm().await;
     let state = test_state_with_storage(&llm_url).await;
@@ -289,7 +324,7 @@ async fn test_create_item_in_conversation() {
     let item_body: serde_json::Value = item_resp.json().await.unwrap();
     assert_eq!(item_body["object"], "list");
     assert_eq!(item_body["data"].as_array().unwrap().len(), 1);
-    assert!(item_body["data"][0]["id"].as_str().unwrap().starts_with("item_"));
+    assert!(item_body["data"][0]["id"].as_str().unwrap().starts_with("msg_"));
     assert_eq!(item_body["data"][0]["type"], "message");
     assert_eq!(item_body["data"][0]["role"], "user");
     assert_eq!(item_body["data"][0]["content"][0]["text"], "Hello!");
@@ -356,6 +391,24 @@ async fn test_list_items_in_conversation() {
     assert_eq!(list_body["data"][0]["content"][0]["text"], "Third");
     assert_eq!(list_body["data"][1]["content"][0]["text"], "Second");
     assert_eq!(list_body["data"][2]["content"][0]["text"], "First");
+
+    let included = client
+        .get(format!("{gw_url}/v1/conversations/{conv_id}/items"))
+        .query(&[("order", "desc"), ("include[]", "message.output_text.logprobs")])
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(included.status(), StatusCode::OK);
+    let included_body: serde_json::Value = included.json().await.unwrap();
+    assert_eq!(included_body["data"], list_body["data"]);
+
+    let unsupported = client
+        .get(format!("{gw_url}/v1/conversations/{conv_id}/items"))
+        .query(&[("include[]", "file_search_call.results")])
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(unsupported.status(), StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test]

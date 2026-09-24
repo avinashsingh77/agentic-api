@@ -1,0 +1,470 @@
+turns:
+- filename: t1
+  request:
+    body: {}
+    headers:
+      accept: '*/*'
+      content-type: application/json
+      user-agent: python-httpx/0.28.1
+    method: POST
+    path: /v1/conversations
+    query_params: {}
+  response:
+    body:
+      created_at: 1790240560
+      id: conv_01a0d2a7-169c-7af2-9ce4-96f1ae158be5
+      metadata: {}
+      object: conversation
+    headers:
+      content-type: application/json
+    status_code: 200
+- filename: t2
+  request:
+    body:
+      conversation: conv_01a0d2a7-169c-7af2-9ce4-96f1ae158be5
+      input:
+      - content: Remember the secret word SAPPHIRE. Reply with only SAPPHIRE.
+        role: user
+      model: Qwen/Qwen3.6-35B-A3B-FP8
+      store: true
+      stream: false
+    headers:
+      accept: '*/*'
+      content-type: application/json
+      user-agent: python-httpx/0.28.1
+    method: POST
+    path: /v1/responses
+    query_params: {}
+  response:
+    body:
+      conversation_id: conv_01a0d2a7-169c-7af2-9ce4-96f1ae158be5
+      created_at: 1790240562
+      error: null
+      id: resp_01a0d2a7-16a3-7ca0-ae40-179e51d95522
+      incomplete_details: null
+      instructions: null
+      model: Qwen/Qwen3.6-35B-A3B-FP8
+      object: response
+      output:
+      - content:
+        - text: "Here's a thinking process:\n\n1.  **Analyze User Input:**\n   - User\
+            \ says: \"Remember the secret word SAPPHIRE. Reply with only SAPPHIRE.\"\
+            \n   - Key instructions: Remember the word, reply with ONLY the word.\n\
+            \n2.  **Identify Constraints:**\n   - The constraint is explicit: \"Reply\
+            \ with only SAPPHIRE.\"\n   - No extra text, no explanations, just the\
+            \ word.\n\n3.  **Formulate Response:**\n   - The response must be exactly:\
+            \ SAPPHIRE\n\n4.  **Check Constraints:**\n   - Does it match exactly?\
+            \ Yes.\n   - Is there any extra text? No.\n   - Does it follow the instruction?\
+            \ Yes.\n\n5.  **Output Generation:**\n   - Output: SAPPHIRE\n   - Ready.✅\n"
+          type: reasoning_text
+        encrypted_content: null
+        id: rs_bc937c183d5c9886
+        status: null
+        summary: []
+        type: reasoning
+      - content:
+        - annotations: []
+          text: '
+
+
+            SAPPHIRE'
+          type: output_text
+        id: msg_8e2cab49083d5b8e
+        role: assistant
+        status: completed
+        type: message
+      previous_response_id: null
+      status: completed
+      usage:
+        input_tokens: 25
+        input_tokens_details:
+          cached_tokens: 0
+        output_tokens: 184
+        output_tokens_details:
+          reasoning_tokens: 0
+        total_tokens: 209
+    headers:
+      content-type: application/json
+    status_code: 200
+- filename: t3
+  request:
+    body:
+      items:
+      - content: The new secret word is ORCHID.
+        role: user
+    headers:
+      accept: '*/*'
+      content-type: application/json
+      user-agent: python-httpx/0.28.1
+    method: POST
+    path: /v1/conversations/conv_01a0d2a7-169c-7af2-9ce4-96f1ae158be5/items
+    query_params: {}
+  response:
+    body:
+      data:
+      - content:
+        - text: The new secret word is ORCHID.
+          type: input_text
+        id: msg_01a0d2a7-1b70-74e2-a7a7-8e614b7f62f4
+        role: user
+        status: completed
+        type: message
+      first_id: msg_01a0d2a7-1b70-74e2-a7a7-8e614b7f62f4
+      has_more: false
+      last_id: msg_01a0d2a7-1b70-74e2-a7a7-8e614b7f62f4
+      object: list
+    headers:
+      content-type: application/json
+    status_code: 200
+- filename: t4
+  request:
+    body: {}
+    headers:
+      accept: '*/*'
+      user-agent: python-httpx/0.28.1
+    method: GET
+    path: /v1/conversations/conv_01a0d2a7-169c-7af2-9ce4-96f1ae158be5/items
+    query_params:
+      order: asc
+  response:
+    body:
+      data:
+      - content:
+        - text: Remember the secret word SAPPHIRE. Reply with only SAPPHIRE.
+          type: input_text
+        id: msg_01a0d2a7-1b5c-75e1-8d7a-6ea8d55eeb3d
+        role: user
+        status: completed
+        type: message
+      - content:
+        - text: "Here's a thinking process:\n\n1.  **Analyze User Input:**\n   - User\
+            \ says: \"Remember the secret word SAPPHIRE. Reply with only SAPPHIRE.\"\
+            \n   - Key instructions: Remember the word, reply with ONLY the word.\n\
+            \n2.  **Identify Constraints:**\n   - The constraint is explicit: \"Reply\
+            \ with only SAPPHIRE.\"\n   - No extra text, no explanations, just the\
+            \ word.\n\n3.  **Formulate Response:**\n   - The response must be exactly:\
+            \ SAPPHIRE\n\n4.  **Check Constraints:**\n   - Does it match exactly?\
+            \ Yes.\n   - Is there any extra text? No.\n   - Does it follow the instruction?\
+            \ Yes.\n\n5.  **Output Generation:**\n   - Output: SAPPHIRE\n   - Ready.✅\n"
+          type: reasoning_text
+        encrypted_content: null
+        id: rs_bc937c183d5c9886
+        status: null
+        summary: []
+        type: reasoning
+      - content:
+        - annotations: []
+          text: '
+
+
+            SAPPHIRE'
+          type: output_text
+        id: msg_8e2cab49083d5b8e
+        role: assistant
+        status: completed
+        type: message
+      - content:
+        - text: The new secret word is ORCHID.
+          type: input_text
+        id: msg_01a0d2a7-1b70-74e2-a7a7-8e614b7f62f4
+        role: user
+        status: completed
+        type: message
+      first_id: msg_01a0d2a7-1b5c-75e1-8d7a-6ea8d55eeb3d
+      has_more: false
+      last_id: msg_01a0d2a7-1b70-74e2-a7a7-8e614b7f62f4
+      object: list
+    headers:
+      content-type: application/json
+    status_code: 200
+- filename: t5
+  request:
+    body: {}
+    headers:
+      accept: '*/*'
+      user-agent: python-httpx/0.28.1
+    method: GET
+    path: /v1/conversations/conv_01a0d2a7-169c-7af2-9ce4-96f1ae158be5/items
+    query_params:
+      limit: '2'
+      order: asc
+  response:
+    body:
+      data:
+      - content:
+        - text: Remember the secret word SAPPHIRE. Reply with only SAPPHIRE.
+          type: input_text
+        id: msg_01a0d2a7-1b5c-75e1-8d7a-6ea8d55eeb3d
+        role: user
+        status: completed
+        type: message
+      - content:
+        - text: "Here's a thinking process:\n\n1.  **Analyze User Input:**\n   - User\
+            \ says: \"Remember the secret word SAPPHIRE. Reply with only SAPPHIRE.\"\
+            \n   - Key instructions: Remember the word, reply with ONLY the word.\n\
+            \n2.  **Identify Constraints:**\n   - The constraint is explicit: \"Reply\
+            \ with only SAPPHIRE.\"\n   - No extra text, no explanations, just the\
+            \ word.\n\n3.  **Formulate Response:**\n   - The response must be exactly:\
+            \ SAPPHIRE\n\n4.  **Check Constraints:**\n   - Does it match exactly?\
+            \ Yes.\n   - Is there any extra text? No.\n   - Does it follow the instruction?\
+            \ Yes.\n\n5.  **Output Generation:**\n   - Output: SAPPHIRE\n   - Ready.✅\n"
+          type: reasoning_text
+        encrypted_content: null
+        id: rs_bc937c183d5c9886
+        status: null
+        summary: []
+        type: reasoning
+      first_id: msg_01a0d2a7-1b5c-75e1-8d7a-6ea8d55eeb3d
+      has_more: true
+      last_id: rs_bc937c183d5c9886
+      object: list
+    headers:
+      content-type: application/json
+    status_code: 200
+- filename: t6
+  request:
+    body: {}
+    headers:
+      accept: '*/*'
+      user-agent: python-httpx/0.28.1
+    method: GET
+    path: /v1/conversations/conv_01a0d2a7-169c-7af2-9ce4-96f1ae158be5/items
+    query_params:
+      after: rs_bc937c183d5c9886
+      limit: '2'
+      order: asc
+  response:
+    body:
+      data:
+      - content:
+        - annotations: []
+          text: '
+
+
+            SAPPHIRE'
+          type: output_text
+        id: msg_8e2cab49083d5b8e
+        role: assistant
+        status: completed
+        type: message
+      - content:
+        - text: The new secret word is ORCHID.
+          type: input_text
+        id: msg_01a0d2a7-1b70-74e2-a7a7-8e614b7f62f4
+        role: user
+        status: completed
+        type: message
+      first_id: msg_8e2cab49083d5b8e
+      has_more: false
+      last_id: msg_01a0d2a7-1b70-74e2-a7a7-8e614b7f62f4
+      object: list
+    headers:
+      content-type: application/json
+    status_code: 200
+- filename: t7
+  request:
+    body: {}
+    headers:
+      accept: '*/*'
+      user-agent: python-httpx/0.28.1
+    method: GET
+    path: /v1/conversations/conv_01a0d2a7-169c-7af2-9ce4-96f1ae158be5/items
+    query_params:
+      order: desc
+  response:
+    body:
+      data:
+      - content:
+        - text: The new secret word is ORCHID.
+          type: input_text
+        id: msg_01a0d2a7-1b70-74e2-a7a7-8e614b7f62f4
+        role: user
+        status: completed
+        type: message
+      - content:
+        - annotations: []
+          text: '
+
+
+            SAPPHIRE'
+          type: output_text
+        id: msg_8e2cab49083d5b8e
+        role: assistant
+        status: completed
+        type: message
+      - content:
+        - text: "Here's a thinking process:\n\n1.  **Analyze User Input:**\n   - User\
+            \ says: \"Remember the secret word SAPPHIRE. Reply with only SAPPHIRE.\"\
+            \n   - Key instructions: Remember the word, reply with ONLY the word.\n\
+            \n2.  **Identify Constraints:**\n   - The constraint is explicit: \"Reply\
+            \ with only SAPPHIRE.\"\n   - No extra text, no explanations, just the\
+            \ word.\n\n3.  **Formulate Response:**\n   - The response must be exactly:\
+            \ SAPPHIRE\n\n4.  **Check Constraints:**\n   - Does it match exactly?\
+            \ Yes.\n   - Is there any extra text? No.\n   - Does it follow the instruction?\
+            \ Yes.\n\n5.  **Output Generation:**\n   - Output: SAPPHIRE\n   - Ready.✅\n"
+          type: reasoning_text
+        encrypted_content: null
+        id: rs_bc937c183d5c9886
+        status: null
+        summary: []
+        type: reasoning
+      - content:
+        - text: Remember the secret word SAPPHIRE. Reply with only SAPPHIRE.
+          type: input_text
+        id: msg_01a0d2a7-1b5c-75e1-8d7a-6ea8d55eeb3d
+        role: user
+        status: completed
+        type: message
+      first_id: msg_01a0d2a7-1b70-74e2-a7a7-8e614b7f62f4
+      has_more: false
+      last_id: msg_01a0d2a7-1b5c-75e1-8d7a-6ea8d55eeb3d
+      object: list
+    headers:
+      content-type: application/json
+    status_code: 200
+- filename: t8
+  request:
+    body: {}
+    headers:
+      accept: '*/*'
+      user-agent: python-httpx/0.28.1
+    method: GET
+    path: /v1/conversations/conv_01a0d2a7-169c-7af2-9ce4-96f1ae158be5/items
+    query_params:
+      limit: '2'
+      order: desc
+  response:
+    body:
+      data:
+      - content:
+        - text: The new secret word is ORCHID.
+          type: input_text
+        id: msg_01a0d2a7-1b70-74e2-a7a7-8e614b7f62f4
+        role: user
+        status: completed
+        type: message
+      - content:
+        - annotations: []
+          text: '
+
+
+            SAPPHIRE'
+          type: output_text
+        id: msg_8e2cab49083d5b8e
+        role: assistant
+        status: completed
+        type: message
+      first_id: msg_01a0d2a7-1b70-74e2-a7a7-8e614b7f62f4
+      has_more: true
+      last_id: msg_8e2cab49083d5b8e
+      object: list
+    headers:
+      content-type: application/json
+    status_code: 200
+- filename: t9
+  request:
+    body: {}
+    headers:
+      accept: '*/*'
+      user-agent: python-httpx/0.28.1
+    method: GET
+    path: /v1/conversations/conv_01a0d2a7-169c-7af2-9ce4-96f1ae158be5/items
+    query_params:
+      after: msg_8e2cab49083d5b8e
+      limit: '2'
+      order: desc
+  response:
+    body:
+      data:
+      - content:
+        - text: "Here's a thinking process:\n\n1.  **Analyze User Input:**\n   - User\
+            \ says: \"Remember the secret word SAPPHIRE. Reply with only SAPPHIRE.\"\
+            \n   - Key instructions: Remember the word, reply with ONLY the word.\n\
+            \n2.  **Identify Constraints:**\n   - The constraint is explicit: \"Reply\
+            \ with only SAPPHIRE.\"\n   - No extra text, no explanations, just the\
+            \ word.\n\n3.  **Formulate Response:**\n   - The response must be exactly:\
+            \ SAPPHIRE\n\n4.  **Check Constraints:**\n   - Does it match exactly?\
+            \ Yes.\n   - Is there any extra text? No.\n   - Does it follow the instruction?\
+            \ Yes.\n\n5.  **Output Generation:**\n   - Output: SAPPHIRE\n   - Ready.✅\n"
+          type: reasoning_text
+        encrypted_content: null
+        id: rs_bc937c183d5c9886
+        status: null
+        summary: []
+        type: reasoning
+      - content:
+        - text: Remember the secret word SAPPHIRE. Reply with only SAPPHIRE.
+          type: input_text
+        id: msg_01a0d2a7-1b5c-75e1-8d7a-6ea8d55eeb3d
+        role: user
+        status: completed
+        type: message
+      first_id: rs_bc937c183d5c9886
+      has_more: false
+      last_id: msg_01a0d2a7-1b5c-75e1-8d7a-6ea8d55eeb3d
+      object: list
+    headers:
+      content-type: application/json
+    status_code: 200
+- filename: t10
+  request:
+    body: {}
+    headers:
+      accept: '*/*'
+      user-agent: python-httpx/0.28.1
+    method: GET
+    path: /v1/conversations/conv_01a0d2a7-169c-7af2-9ce4-96f1ae158be5/items
+    query_params:
+      include[]: message.output_text.logprobs
+      order: asc
+  response:
+    body:
+      data:
+      - content:
+        - text: Remember the secret word SAPPHIRE. Reply with only SAPPHIRE.
+          type: input_text
+        id: msg_01a0d2a7-1b5c-75e1-8d7a-6ea8d55eeb3d
+        role: user
+        status: completed
+        type: message
+      - content:
+        - text: "Here's a thinking process:\n\n1.  **Analyze User Input:**\n   - User\
+            \ says: \"Remember the secret word SAPPHIRE. Reply with only SAPPHIRE.\"\
+            \n   - Key instructions: Remember the word, reply with ONLY the word.\n\
+            \n2.  **Identify Constraints:**\n   - The constraint is explicit: \"Reply\
+            \ with only SAPPHIRE.\"\n   - No extra text, no explanations, just the\
+            \ word.\n\n3.  **Formulate Response:**\n   - The response must be exactly:\
+            \ SAPPHIRE\n\n4.  **Check Constraints:**\n   - Does it match exactly?\
+            \ Yes.\n   - Is there any extra text? No.\n   - Does it follow the instruction?\
+            \ Yes.\n\n5.  **Output Generation:**\n   - Output: SAPPHIRE\n   - Ready.✅\n"
+          type: reasoning_text
+        encrypted_content: null
+        id: rs_bc937c183d5c9886
+        status: null
+        summary: []
+        type: reasoning
+      - content:
+        - annotations: []
+          text: '
+
+
+            SAPPHIRE'
+          type: output_text
+        id: msg_8e2cab49083d5b8e
+        role: assistant
+        status: completed
+        type: message
+      - content:
+        - text: The new secret word is ORCHID.
+          type: input_text
+        id: msg_01a0d2a7-1b70-74e2-a7a7-8e614b7f62f4
+        role: user
+        status: completed
+        type: message
+      first_id: msg_01a0d2a7-1b5c-75e1-8d7a-6ea8d55eeb3d
+      has_more: false
+      last_id: msg_01a0d2a7-1b70-74e2-a7a7-8e614b7f62f4
+      object: list
+    headers:
+      content-type: application/json
+    status_code: 200

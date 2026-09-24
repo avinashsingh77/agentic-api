@@ -190,12 +190,7 @@ impl ItemResponse {
             message.status.get_or_insert(MessageStatus::Completed);
             if let InputMessageContent::Text(text) = &mut message.content {
                 let content = InputTextContent::new(std::mem::take(text));
-                let part = if message.role == "assistant" {
-                    InputContent::OutputText(content)
-                } else {
-                    InputContent::InputText(content)
-                };
-                message.content = InputMessageContent::Parts(vec![part]);
+                message.content = InputMessageContent::Parts(vec![InputContent::InputText(content)]);
             }
         }
         Self { id, item }

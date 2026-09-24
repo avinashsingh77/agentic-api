@@ -1,16 +1,16 @@
 //! Conversation history item stored in the database.
 
-mod conversation;
-pub use conversation::{detach_from_conversation_in_tx, get_for_conversation, list_for_conversation};
-
 use serde_json::Value;
+use std::convert::TryFrom;
 use std::fmt::Write;
 use tracing::warn;
 
 use super::super::pool::{DbPool, DbResult, DbTransaction};
 use super::super::types::item::{InOutItem, ItemKind, STORED_ITEM_KIND_KEY};
+use crate::storage::StoreResult;
+use crate::types::conversations::ItemOrder;
 use crate::types::io::{InputItem, OutputItem};
-use crate::utils::common::{deserialize_from_str_opt, utcnow_str};
+use crate::utils::common::{deserialize_from_str_opt, utcnow_str, uuid7_str};
 
 const ITEM_COLUMN_COUNT: usize = 5;
 const SEQUENCE_COLUMN_INDEX: usize = 4;
@@ -134,6 +134,28 @@ fn item_values_clause(row_count: usize, first_bind_index: usize, sequence_from_c
     clause
 }
 
+/// Serialize new history items, retaining public IDs already assigned to input or output items.
+/// Items without IDs receive an ID appropriate for their wire type.
+///
+/// # Errors
+/// Returns an error if an item cannot be serialized.
+pub(crate) fn serialize_new_items(items: Vec<InOutItem>) -> StoreResult<Vec<(String, String)>> {
+    items
+        .into_iter()
+        .map(|item| {
+            let data = String::try_from(&item)?;
+            let value: Value = serde_json::from_str(&data)?;
+            let existing_id = value.get("id").and_then(Value::as_str).filter(|id| !id.is_empty());
+            let prefix = if value.get("type").and_then(Value::as_str) == Some("message") {
+                "msg_"
+            } else {
+                "item_"
+            };
+            Ok((existing_id.map_or_else(|| uuid7_str(prefix), str::to_owned), data))
+        })
+        .collect()
+}
+
 /// Create items in a transaction with optional conversation context.
 ///
 /// If `conversation_id` is provided, the next sequence range is computed in the insert statement so
@@ -246,6 +268,17 @@ pub async fn get_items_by_conversation(pool: &DbPool, conversation_id: &str) -> 
         .await
 }
 
+/// Collect active item IDs in conversation order while holding the turn's transaction.
+///
+/// # Errors
+/// Returns `DbResult::Err` if the database query fails.
+pub async fn ids_for_conversation_in_tx(tx: &mut DbTransaction<'_>, conversation_id: &str) -> DbResult<Vec<String>> {
+    sqlx::query_scalar("SELECT id FROM items WHERE conversation_id = $1 ORDER BY seq ASC")
+        .bind(conversation_id)
+        .fetch_all(&mut **tx)
+        .await
+}
+
 /// Returns the last stored item sequence for a conversation inside a transaction.
 ///
 /// # Errors
@@ -260,11 +293,119 @@ pub async fn last_conversation_sequence_in_tx(
         .await
 }
 
+/// List a page using keyset pagination with (seq, id) ordering.
+///
+/// # Errors
+/// Returns an error if the query fails or the cursor is not in this conversation.
+pub async fn list_for_conversation(
+    pool: &DbPool,
+    tenant_id: &str,
+    conversation_id: &str,
+    limit: i64,
+    after_id: Option<&str>,
+    order: ItemOrder,
+) -> DbResult<Vec<Item>> {
+    let (comparison, direction) = match order {
+        ItemOrder::Asc => (">", "ASC"),
+        ItemOrder::Desc => ("<", "DESC"),
+    };
+    let base = "SELECT items.* FROM items \
+                JOIN conversations ON conversations.id = items.conversation_id \
+                WHERE conversations.id = $1 AND conversations.tenant_id = $2";
+    let ordering = format!("ORDER BY COALESCE(items.seq, -1) {direction}, items.id {direction}");
+
+    if let Some(cursor_id) = after_id {
+        let cursor = get_for_conversation(pool, tenant_id, conversation_id, cursor_id)
+            .await?
+            .ok_or(sqlx::Error::RowNotFound)?;
+        let query = format!("{base} AND (COALESCE(items.seq, -1), items.id) {comparison} ($3, $4) {ordering} LIMIT $5");
+        sqlx::query_as(&query)
+            .bind(conversation_id)
+            .bind(tenant_id)
+            .bind(cursor.seq.unwrap_or(-1))
+            .bind(cursor.id)
+            .bind(limit)
+            .fetch_all(pool)
+            .await
+    } else {
+        let query = format!("{base} {ordering} LIMIT $3");
+        sqlx::query_as(&query)
+            .bind(conversation_id)
+            .bind(tenant_id)
+            .bind(limit)
+            .fetch_all(pool)
+            .await
+    }
+}
+
+/// Get an item through its conversation, including items written by Responses persistence.
+///
+/// # Errors
+/// Returns an error if the query fails.
+pub async fn get_for_conversation(
+    pool: &DbPool,
+    tenant_id: &str,
+    conversation_id: &str,
+    item_id: &str,
+) -> DbResult<Option<Item>> {
+    sqlx::query_as(
+        "SELECT items.* FROM items JOIN conversations ON conversations.id = items.conversation_id \
+         WHERE conversations.id = $1 AND conversations.tenant_id = $2 AND items.id = $3",
+    )
+    .bind(conversation_id)
+    .bind(tenant_id)
+    .bind(item_id)
+    .fetch_optional(pool)
+    .await
+}
+
+/// Remove one or all items from a locked conversation while preserving stored response history.
+///
+/// # Errors
+/// Returns an error if the update fails.
+pub async fn detach_from_conversation_in_tx(
+    tx: &mut DbTransaction<'_>,
+    conversation_id: &str,
+    item_id: Option<&str>,
+) -> DbResult<u64> {
+    let result = sqlx::query(
+        "UPDATE items SET conversation_id = NULL, seq = NULL \
+         WHERE conversation_id = $1 AND (CAST($2 AS TEXT) IS NULL OR id = $2)",
+    )
+    .bind(conversation_id)
+    .bind(item_id)
+    .execute(&mut **tx)
+    .await?;
+    Ok(result.rows_affected())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::types::event::MessageStatus;
-    use crate::types::io::{InputItem, OutputItem, ReasoningOutput, ReasoningTextContent};
+    use crate::types::io::{InputItem, OutputItem, OutputMessage, ReasoningOutput, ReasoningTextContent};
+
+    #[test]
+    fn new_items_reuse_public_ids_and_generate_message_ids() {
+        let input: InputItem = serde_json::from_value(serde_json::json!({
+            "type": "message", "id": "msg_supplied", "role": "user", "content": "hello"
+        }))
+        .unwrap();
+        let output = OutputItem::Message(OutputMessage::new("msg_generated", MessageStatus::Completed));
+        let without_id: InputItem = serde_json::from_value(serde_json::json!({
+            "type": "message", "role": "user", "content": "next"
+        }))
+        .unwrap();
+        let rows = serialize_new_items(vec![
+            InOutItem::Input(input),
+            InOutItem::Output(output),
+            InOutItem::Input(without_id),
+        ])
+        .unwrap();
+        assert_eq!(rows[0].0, "msg_supplied");
+        assert_eq!(rows[1].0, "msg_generated");
+        assert!(rows[2].0.starts_with("msg_"));
+    }
 
     #[test]
     fn item_values_clause_numbers_plain_rows() {
