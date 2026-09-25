@@ -677,5 +677,94 @@ async fn test_item_belongs_to_conversation_validation() {
     assert_eq!(wrong_conv_resp.status(), StatusCode::NOT_FOUND);
 }
 
+#[tokio::test]
+async fn test_create_items_rejects_empty_id() {
+    let (llm_url, _llm) = spawn_mock_llm().await;
+    let state = test_state_with_storage(&llm_url).await;
+    let (gw_url, _gateway) = spawn_gateway(state).await;
+    let client = reqwest::Client::new();
+
+    // Create conversation
+    let conv_resp = client
+        .post(format!("{gw_url}/v1/conversations"))
+        .json(&json!({}))
+        .send()
+        .await
+        .unwrap();
+    let conv_body: serde_json::Value = conv_resp.json().await.unwrap();
+    let conv_id = conv_body["id"].as_str().unwrap();
+
+    // Try to create item with empty ID
+    let create_resp = client
+        .post(format!("{gw_url}/v1/conversations/{conv_id}/items"))
+        .json(&json!({
+            "items": [{
+                "type": "message",
+                "id": "",
+                "role": "user",
+                "content": "test"
+            }]
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(create_resp.status(), StatusCode::BAD_REQUEST);
+    let error_body: serde_json::Value = create_resp.json().await.unwrap();
+    assert_eq!(error_body["error"]["type"], "invalid_request_error");
+    assert!(
+        error_body["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("empty string")
+    );
+}
+
+#[tokio::test]
+async fn test_create_items_rejects_duplicate_ids() {
+    let (llm_url, _llm) = spawn_mock_llm().await;
+    let state = test_state_with_storage(&llm_url).await;
+    let (gw_url, _gateway) = spawn_gateway(state).await;
+    let client = reqwest::Client::new();
+
+    // Create conversation
+    let conv_resp = client
+        .post(format!("{gw_url}/v1/conversations"))
+        .json(&json!({}))
+        .send()
+        .await
+        .unwrap();
+    let conv_body: serde_json::Value = conv_resp.json().await.unwrap();
+    let conv_id = conv_body["id"].as_str().unwrap();
+
+    // Try to create items with duplicate IDs
+    let create_resp = client
+        .post(format!("{gw_url}/v1/conversations/{conv_id}/items"))
+        .json(&json!({
+            "items": [
+                {
+                    "type": "message",
+                    "id": "msg_duplicate",
+                    "role": "user",
+                    "content": "first"
+                },
+                {
+                    "type": "message",
+                    "id": "msg_duplicate",
+                    "role": "user",
+                    "content": "second"
+                }
+            ]
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(create_resp.status(), StatusCode::BAD_REQUEST);
+    let error_body: serde_json::Value = create_resp.json().await.unwrap();
+    assert_eq!(error_body["error"]["type"], "invalid_request_error");
+    assert!(error_body["error"]["message"].as_str().unwrap().contains("duplicate"));
+}
+
 #[path = "conversations/regressions.rs"]
 mod regressions;

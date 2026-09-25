@@ -7,7 +7,7 @@ use tracing::warn;
 
 use super::super::pool::{DbPool, DbResult, DbTransaction};
 use super::super::types::item::{InOutItem, ItemKind, STORED_ITEM_KIND_KEY};
-use crate::storage::StoreResult;
+use crate::storage::{StorageError, StoreResult};
 use crate::types::conversations::ItemOrder;
 use crate::types::io::{InputItem, OutputItem};
 use crate::utils::common::{deserialize_from_str_opt, utcnow_str, uuid7_str};
@@ -138,22 +138,47 @@ fn item_values_clause(row_count: usize, first_bind_index: usize, sequence_from_c
 /// Items without IDs receive an ID appropriate for their wire type.
 ///
 /// # Errors
-/// Returns an error if an item cannot be serialized.
+/// Returns an error if an item cannot be serialized, has an empty ID, or duplicate IDs exist.
 pub(crate) fn serialize_new_items(items: Vec<InOutItem>) -> StoreResult<Vec<(String, String)>> {
-    items
+    use std::collections::HashSet;
+
+    let mut seen_ids = HashSet::new();
+    let results: Vec<(String, String)> = items
         .into_iter()
         .map(|item| {
             let data = String::try_from(&item)?;
             let value: Value = serde_json::from_str(&data)?;
-            let existing_id = value.get("id").and_then(Value::as_str).filter(|id| !id.is_empty());
+
+            // Check for explicit empty ID (distinct from missing ID)
+            if let Some(id_value) = value.get("id") {
+                if let Some(id_str) = id_value.as_str() {
+                    if id_str.is_empty() {
+                        return Err(StorageError::Validation(
+                            "item id cannot be an empty string".to_string(),
+                        ));
+                    }
+                }
+            }
+
+            let existing_id = value.get("id").and_then(Value::as_str);
             let prefix = if value.get("type").and_then(Value::as_str) == Some("message") {
                 "msg_"
             } else {
                 "item_"
             };
-            Ok((existing_id.map_or_else(|| uuid7_str(prefix), str::to_owned), data))
+            let id = existing_id.map_or_else(|| uuid7_str(prefix), str::to_owned);
+            Ok((id, data))
         })
-        .collect()
+        .collect::<StoreResult<Vec<_>>>()?;
+
+    // Check for duplicate IDs after all IDs are determined
+    for (id, _) in &results {
+        if !seen_ids.insert(id.clone()) {
+            return Err(StorageError::Validation(format!("duplicate item id: {id}")));
+        }
+    }
+
+    Ok(results)
 }
 
 /// Create items in a transaction with optional conversation context.
@@ -405,6 +430,49 @@ mod tests {
         assert_eq!(rows[0].0, "msg_supplied");
         assert_eq!(rows[1].0, "msg_generated");
         assert!(rows[2].0.starts_with("msg_"));
+    }
+
+    #[test]
+    fn serialize_new_items_rejects_empty_id() {
+        let input: InputItem = serde_json::from_value(serde_json::json!({
+            "type": "message", "id": "", "role": "user", "content": "test"
+        }))
+        .unwrap();
+        let result = serialize_new_items(vec![InOutItem::Input(input)]);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.is_validation());
+        assert_eq!(err.to_string(), "validation error: item id cannot be an empty string");
+    }
+
+    #[test]
+    fn serialize_new_items_rejects_duplicate_ids() {
+        let first: InputItem = serde_json::from_value(serde_json::json!({
+            "type": "message", "id": "msg_duplicate", "role": "user", "content": "first"
+        }))
+        .unwrap();
+        let second: InputItem = serde_json::from_value(serde_json::json!({
+            "type": "message", "id": "msg_duplicate", "role": "user", "content": "second"
+        }))
+        .unwrap();
+        let result = serialize_new_items(vec![InOutItem::Input(first), InOutItem::Input(second)]);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.is_validation());
+        assert!(err.to_string().contains("duplicate item id: msg_duplicate"));
+    }
+
+    #[test]
+    fn serialize_new_items_accepts_missing_id() {
+        let input: InputItem = serde_json::from_value(serde_json::json!({
+            "type": "message", "role": "user", "content": "test"
+        }))
+        .unwrap();
+        let result = serialize_new_items(vec![InOutItem::Input(input)]);
+        assert!(result.is_ok());
+        let rows = result.unwrap();
+        assert_eq!(rows.len(), 1);
+        assert!(rows[0].0.starts_with("msg_"));
     }
 
     #[test]

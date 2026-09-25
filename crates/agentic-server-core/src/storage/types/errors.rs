@@ -34,6 +34,10 @@ pub enum StorageError {
     #[error("storage not configured or disabled")]
     NotConfigured,
 
+    /// Validation error for malformed or invalid data.
+    #[error("validation error: {0}")]
+    Validation(String),
+
     /// Serialization or deserialization of data failed.
     ///
     /// Wraps `serde_json::Error` and automatically converts from it via `#[from]`.
@@ -91,6 +95,12 @@ impl StorageError {
     #[must_use]
     pub fn is_serialization(&self) -> bool {
         matches!(self, Self::Serialization(_))
+    }
+
+    /// Returns `true` if this error is a validation error.
+    #[must_use]
+    pub fn is_validation(&self) -> bool {
+        matches!(self, Self::Validation(_))
     }
 }
 

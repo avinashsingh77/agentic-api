@@ -151,6 +151,7 @@ impl ExecutorError {
     pub fn http_status(&self) -> StatusCode {
         match self.client_visible_error() {
             Self::Storage(e) if e.is_not_found() => StatusCode::NOT_FOUND,
+            Self::Storage(e) if e.is_validation() => StatusCode::BAD_REQUEST,
             Self::LLMRequest { status, .. } | Self::LLMTransport { status, .. } => *status,
             Self::ConversationLocked { .. }
             | Self::Tool(ToolError::Config(_) | ToolError::MissingOutput { .. })
@@ -186,6 +187,7 @@ impl ExecutorError {
             | Self::JsonError(_)
             | Self::PayloadTooLarge(_) => "invalid_request_error",
             Self::Storage(e) if e.is_not_found() => "not_found",
+            Self::Storage(e) if e.is_validation() => "invalid_request_error",
             Self::Conflict(_) => "conflict_error",
             Self::LLMRequest { .. } | Self::LLMTransport { .. } | Self::CompactionFailed { .. } => "upstream_error",
             Self::ResourceLimitExceeded { limit, .. } => match limit {
