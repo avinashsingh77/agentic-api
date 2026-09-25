@@ -210,7 +210,7 @@ async fn assert_relayed_call_id_rejected(
     );
     assert!(!message.contains(marker), "{case}: leaked call_id: {message}");
 
-    let retry = function_call("fc_retry", "call_retry", "completed");
+    let retry = function_call(&format!("fc_retry_{response_id}"), "call_retry", "completed");
     let corrected = Box::pin(persist(
         retry_context,
         UpstreamBody::Json(&upstream_call_json(&retry, "completed")),
