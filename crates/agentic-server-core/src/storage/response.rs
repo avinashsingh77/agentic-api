@@ -121,7 +121,7 @@ impl ResponseStore {
             Some(prev_id) => self.get(prev_id).await?.history_item_ids,
             None => Vec::new(),
         };
-        let items_ = item::serialize_new_items(new_items)?;
+        let items_ = item::serialize_new_items(new_items, item::ItemSource::ResponseHistory)?;
         item_ids.extend(items_.iter().map(|(id, _)| id.clone()));
         let history_item_ids_json = serialize_to_string(&item_ids)?;
         let metadata_json = String::try_from(metadata)?;

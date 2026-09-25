@@ -80,6 +80,18 @@ impl IdPairs {
     }
 }
 
+fn remap_error_message(body: &mut Value, ids: &IdPairs) {
+    if let Some(message) = body["error"]["message"].as_str() {
+        let message = ids
+            .forward
+            .iter()
+            .fold(message.to_owned(), |message, (recorded, actual)| {
+                message.replace(&format!("'{recorded}'"), &format!("'{actual}'"))
+            });
+        body["error"]["message"] = Value::String(message);
+    }
+}
+
 fn is_id_field(key: &str) -> bool {
     matches!(
         key,
@@ -617,3 +629,280 @@ fn response_branch_matches_openai() {
 fn pagination_matches_openai() {
     compare_case("pagination");
 }
+
+fn check_edge_case_recording(cassette: &Cassette) {
+    let turns = &cassette.turns;
+    assert_eq!(turns.len(), 19);
+    for (index, turn) in turns.iter().enumerate() {
+        assert_eq!(turn.filename, format!("t{}", index + 1));
+    }
+
+    for (start, kind) in [(0, "message"), (3, "function_call")] {
+        let conversation = &turns[start];
+        assert_eq!(conversation.request.method, "POST");
+        assert_eq!(conversation.request.path, "/v1/conversations");
+        assert_eq!(conversation.response.status_code, 200);
+        let conversation_id = conversation.response.body.as_ref().unwrap()["id"].as_str().unwrap();
+        let items_path = format!("/v1/conversations/{conversation_id}/items");
+        let creation = &turns[start + 1];
+        assert_eq!(creation.request.method, "POST");
+        assert_eq!(creation.request.path, items_path);
+        let requested = &creation.request.body["items"][0];
+        assert_eq!(requested["type"], kind);
+        let requested_id = requested["id"].as_str().expect("client-supplied ID");
+        let listing = &turns[start + 2];
+        assert_eq!(listing.request.method, "GET");
+        assert_eq!(listing.request.path, items_path);
+        assert_eq!(listing.response.status_code, 200);
+        assert_eq!(creation.response.status_code, 400);
+        assert!(all_listed_ids(listing).is_empty(), "rejected item was stored");
+        let prefix = if kind == "message" { "msg" } else { "fc" };
+        assert_eq!(
+            creation.response.body.as_ref().unwrap(),
+            &json!({"error": {
+                "code": "invalid_value", "param": "items[0].id", "type": "invalid_request_error",
+                "message": format!("Invalid 'items[0].id': '{requested_id}'. Expected an ID that begins with '{prefix}'.")
+            }})
+        );
+    }
+
+    let conversation = &turns[6];
+    assert_eq!(conversation.request.path, "/v1/conversations");
+    let conversation_id = conversation.response.body.as_ref().unwrap()["id"].as_str().unwrap();
+    let items_path = format!("/v1/conversations/{conversation_id}/items");
+    let creation = &turns[7];
+    assert_eq!(
+        (creation.request.method.as_str(), creation.request.path.as_str()),
+        ("POST", items_path.as_str())
+    );
+    assert_eq!(creation.response.status_code, 200);
+    let created = all_listed_ids(creation);
+    assert_eq!(created.len(), 3);
+    assert_eq!(created.iter().collect::<std::collections::HashSet<_>>().len(), 3);
+    assert_eq!(
+        creation.request.body["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|item| item["content"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        ["msg1", "msg2", "msg3"]
+    );
+
+    let page = &turns[8];
+    assert_eq!(
+        (page.request.method.as_str(), page.request.path.as_str()),
+        ("GET", items_path.as_str())
+    );
+    assert_eq!(page.request.query_params, json!({"limit": "2"}));
+    assert_eq!(page.response.status_code, 200);
+    let page_ids = all_listed_ids(page);
+    assert_eq!(page_ids, vec![created[2], created[1]]);
+    let page_body = page.response.body.as_ref().unwrap();
+    assert_eq!(page_body["first_id"], page_ids[0]);
+    assert_eq!(page_body["last_id"], page_ids[1]);
+    assert_eq!(page_body["has_more"], true);
+
+    let deletion = &turns[9];
+    assert_eq!(deletion.request.method, "DELETE");
+    assert_eq!(deletion.request.path, format!("{items_path}/{}", page_ids[1]));
+    assert_eq!(deletion.response.status_code, 200);
+    let after = &turns[10];
+    assert_eq!(
+        (after.request.method.as_str(), after.request.path.as_str()),
+        ("GET", items_path.as_str())
+    );
+    assert_eq!(after.request.query_params, json!({"after": page_ids[1], "limit": "2"}));
+    assert_eq!(after.response.status_code, 404);
+}
+
+#[test]
+fn edge_case_recordings_preserve_item_ids_and_deleted_cursor_behavior() {
+    let (openai, gateway) = pair("edge-cases").expect("edge-case recordings");
+    check_edge_case_recording(&openai);
+    check_edge_case_recording(&gateway);
+
+    let mut ids = IdPairs::default();
+    for (index, (left, right)) in openai.turns.iter().zip(&gateway.turns).enumerate() {
+        let location = format!("edge-cases t{}", index + 1);
+        assert_eq!(left.request.method, right.request.method, "{location}: method");
+        compare_path(&left.request.path, &right.request.path, &mut ids);
+        compare_value(
+            &left.request.query_params,
+            &right.request.query_params,
+            &location,
+            &mut ids,
+            false,
+        );
+        compare_value(&left.request.body, &right.request.body, &location, &mut ids, false);
+        assert_eq!(
+            left.response.status_code, right.response.status_code,
+            "{location}: status"
+        );
+        assert!(left.response.sse.is_none() && right.response.sse.is_none());
+        let mut expected = left.response.body.clone().expect("OpenAI response body");
+        remap_error_message(&mut expected, &ids);
+        compare_value(
+            &expected,
+            right.response.body.as_ref().expect("gateway response body"),
+            &location,
+            &mut ids,
+            false,
+        );
+    }
+}
+
+#[tokio::test]
+async fn supplied_id_validation_matches_recorded_openai_errors() {
+    use agentic_core::executor::ConversationHandler;
+    use agentic_core::storage::ConversationStore;
+    use agentic_core::types::conversations::CreateItemRequest;
+
+    let reference = cassette("edge-cases", "openai").expect("OpenAI edge-case recording");
+    // Disabled storage proves validation happens before any database operation.
+    let handler = ConversationHandler::new(ConversationStore::disabled());
+    for index in [1, 4] {
+        let turn = &reference.turns[index];
+        let request: CreateItemRequest = serde_json::from_value(turn.request.body.clone()).unwrap();
+        let errors = [
+            handler
+                .create_items("tenant", "conv_unused", request.items.clone())
+                .await
+                .unwrap_err(),
+            handler
+                .create_with_metadata_and_items("tenant", None, request.items)
+                .await
+                .unwrap_err(),
+        ];
+        for error in errors {
+            assert_eq!(error.http_status().as_u16(), turn.response.status_code);
+            let body: Value = serde_json::from_slice(&error.into_response_body()).unwrap();
+            assert_eq!(&body, turn.response.body.as_ref().unwrap());
+        }
+    }
+}
+
+#[test]
+fn both_providers_reuse_item_identity_and_preserve_duplicate_occurrences() {
+    let (openai, gateway) = pair("edge-cases").expect("edge-case recordings");
+    for recording in [&openai, &gateway] {
+        check_reused_item_occurrences(recording);
+    }
+}
+
+fn check_reused_item_occurrences(recording: &Cassette) {
+    let turns = &recording.turns;
+    assert_eq!(turns.len(), 19);
+    let original = &turns[7].response.body.as_ref().unwrap()["data"][2];
+    let public_id = original["id"].as_str().unwrap();
+    for (start, count) in [(11, 1), (14, 2)] {
+        let conversation_id = turns[start].response.body.as_ref().unwrap()["id"].as_str().unwrap();
+        let path = format!("/v1/conversations/{conversation_id}/items");
+        let creation = &turns[start + 1];
+        assert_eq!(creation.request.path, path);
+        assert_eq!(creation.response.status_code, 200);
+        let requested = creation.request.body["items"].as_array().unwrap();
+        assert_eq!(requested.len(), count);
+        for item in requested {
+            assert_eq!(item["id"], public_id);
+            assert_ne!(item["content"], original["content"]);
+        }
+        let expected = vec![original.clone(); count];
+        assert_eq!(creation.response.body.as_ref().unwrap()["data"], json!(expected));
+        let listing = &turns[start + 2];
+        assert_eq!(listing.request.path, path);
+        assert_eq!(listing.request.query_params, json!({"order": "asc"}));
+        assert_eq!(listing.response.status_code, 200);
+        assert_eq!(listing.response.body.as_ref().unwrap()["data"], json!(expected));
+    }
+    assert_eq!(turns[17].response.status_code, 400);
+    assert_eq!(
+        turns[17].response.body.as_ref().unwrap(),
+        &json!({"error": {
+            "type": "invalid_request_error", "code": "item_already_in_conversation",
+            "param": "items", "message": "Item already in conversation"
+        }})
+    );
+    let original_items = turns[7].response.body.as_ref().unwrap()["data"].as_array().unwrap();
+    assert_eq!(
+        turns[18].response.body.as_ref().unwrap()["data"],
+        json!([original_items[0], original_items[2]])
+    );
+}
+
+#[tokio::test]
+async fn existing_conversation_item_error_matches_openai_recording() {
+    use agentic_core::executor::ExecutorError;
+    use agentic_core::storage::{ConversationStore, InOutItem, create_pool_with_schema};
+    use agentic_core::types::conversations::CreateItemRequest;
+
+    let reference = cassette("edge-cases", "openai").expect("OpenAI edge-case recording");
+    let pool = create_pool_with_schema(Some("sqlite::memory:")).await.unwrap();
+    let store = ConversationStore::new(pool);
+    let source = &reference.turns[7].response.body.as_ref().unwrap()["data"][2];
+    let original = InOutItem::Input(serde_json::from_value(source.clone()).unwrap());
+    let conversation = store
+        .create_with_metadata_and_items(Some("default_tenant"), None, vec![original])
+        .await
+        .unwrap();
+    let before = store.rehydrate_snapshot(&conversation.conversation_id).await.unwrap();
+    let request: CreateItemRequest = serde_json::from_value(reference.turns[17].request.body.clone()).unwrap();
+    let items = request
+        .items
+        .into_iter()
+        .map(|item| match item {
+            agentic_core::types::conversations::ConversationItem::Input(item) => InOutItem::Input(item),
+            agentic_core::types::conversations::ConversationItem::Output(item) => InOutItem::Output(item),
+        })
+        .collect();
+    let error: ExecutorError = store
+        .create_items("default_tenant", &conversation.conversation_id, items)
+        .await
+        .unwrap_err()
+        .into();
+    assert_eq!(error.http_status().as_u16(), reference.turns[17].response.status_code);
+    let body: Value = serde_json::from_slice(&error.into_response_body()).unwrap();
+    assert_eq!(&body, reference.turns[17].response.body.as_ref().unwrap());
+    let after = store.rehydrate_snapshot(&conversation.conversation_id).await.unwrap();
+    assert_eq!(after.items, before.items);
+    assert_eq!(after.version, before.version);
+}
+
+#[tokio::test]
+async fn deleted_cursor_error_body_matches_openai_recording() {
+    use agentic_core::executor::ExecutorError;
+    use agentic_core::storage::{ConversationStore, InOutItem, create_pool_with_schema};
+    use agentic_core::types::conversations::ItemOrder;
+
+    let reference = cassette("edge-cases", "openai").expect("OpenAI edge-case recording");
+    let pool = create_pool_with_schema(Some("sqlite::memory:")).await.unwrap();
+    let store = ConversationStore::new(pool);
+    let items = reference.turns[7].response.body.as_ref().unwrap()["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|value| InOutItem::Input(serde_json::from_value(value.clone()).unwrap()))
+        .collect();
+    let conversation = store
+        .create_with_metadata_and_items(Some("tenant"), None, items)
+        .await
+        .unwrap();
+    let cursor = reference.turns[10].request.query_params["after"].as_str().unwrap();
+    store
+        .delete_item("tenant", &conversation.conversation_id, cursor)
+        .await
+        .unwrap();
+    for order in [ItemOrder::Asc, ItemOrder::Desc] {
+        let error: ExecutorError = store
+            .list_items("tenant", &conversation.conversation_id, 2, Some(cursor), order)
+            .await
+            .unwrap_err()
+            .into();
+        assert_eq!(error.http_status().as_u16(), reference.turns[10].response.status_code);
+        let body: Value = serde_json::from_slice(&error.into_response_body()).unwrap();
+        assert_eq!(&body, reference.turns[10].response.body.as_ref().unwrap());
+    }
+}
+
+#[path = "conversations/edge_replay.rs"]
+mod edge_replay;

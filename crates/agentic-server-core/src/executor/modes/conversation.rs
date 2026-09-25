@@ -200,7 +200,7 @@ impl ConversationHandler {
         let mut item_responses = Vec::with_capacity(created.len());
         for db_item in created {
             let conversation_item = convert_item(&db_item)?;
-            item_responses.push(ItemResponse::new(db_item.id, conversation_item));
+            item_responses.push(ItemResponse::new(db_item.public_id().to_owned(), conversation_item));
         }
 
         Ok(item_responses)
@@ -248,7 +248,7 @@ impl ConversationHandler {
         let mut item_responses = Vec::with_capacity(items.len());
         for db_item in items {
             let conversation_item = convert_item(&db_item)?;
-            item_responses.push(ItemResponse::new(db_item.id, conversation_item));
+            item_responses.push(ItemResponse::new(db_item.public_id().to_owned(), conversation_item));
         }
 
         Ok(ListItemsResponse::new(item_responses, has_more))
@@ -271,7 +271,7 @@ impl ConversationHandler {
             .map_err(ExecutorError::Storage)?;
 
         let conversation_item = convert_item(&db_item)?;
-        Ok(ItemResponse::new(db_item.id, conversation_item))
+        Ok(ItemResponse::new(db_item.public_id().to_owned(), conversation_item))
     }
 
     /// Deletes an item by ID, returning the updated conversation.

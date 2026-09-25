@@ -11,8 +11,8 @@ turns:
     query_params: {}
   response:
     body:
-      created_at: 1790239054
-      id: conv_01a0d290-1989-7133-96e2-d15070b02bbe
+      created_at: 1790336317
+      id: conv_01a0d85c-37d8-7d23-8733-927f7c6a87dd
       metadata: {}
       object: conversation
     headers:
@@ -21,7 +21,7 @@ turns:
 - filename: t2
   request:
     body:
-      conversation: conv_01a0d290-1989-7133-96e2-d15070b02bbe
+      conversation: conv_01a0d85c-37d8-7d23-8733-927f7c6a87dd
       input:
       - content: Remember the secret word SAPPHIRE. Reply with only SAPPHIRE.
         role: user
@@ -37,28 +37,39 @@ turns:
     query_params: {}
   response:
     body:
-      conversation_id: conv_01a0d290-1989-7133-96e2-d15070b02bbe
-      created_at: 1790239055
+      conversation_id: conv_01a0d85c-37d8-7d23-8733-927f7c6a87dd
+      created_at: 1790336319
       error: null
-      id: resp_01a0d290-1992-7ea3-95f3-3ef865d8a195
+      id: resp_01a0d85c-37e0-7423-a6f0-fa8b68237d8b
       incomplete_details: null
       instructions: null
       model: Qwen/Qwen3.6-35B-A3B-FP8
       object: response
       output:
       - content:
-        - text: "Here's a thinking process:\n\n1.  **Analyze User Input:**\n   - User\
-            \ says: \"Remember the secret word SAPPHIRE. Reply with only SAPPHIRE.\"\
-            \n   - Key instruction: Remember the word, and reply with ONLY that word.\n\
-            \n2.  **Identify Constraints:**\n   - The response must be exactly \"\
-            SAPPHIRE\"\n   - No additional text, explanations, or formatting\n   -\
-            \ Just the word itself\n\n3.  **Formulate Response:**\n   - Check constraint:\
-            \ \"Reply with only SAPPHIRE.\"\n   - Response should be: SAPPHIRE\n\n\
-            4.  **Final Output Generation:**\n   - Output exactly matches the constraint.\
-            \ No extra words, no quotes, just the word.✅\n"
+        - text: "Thinking Process:\n\n1.  **Deconstruct the user's request:**\n  \
+            \  *   User says: \"Remember the secret word SAPPHIRE. Reply with only\
+            \ SAPPHIRE.\"\n    *   Key instruction: \"Reply with only SAPPHIRE.\"\n\
+            \    *   Implicit goal: The user wants the model to output \"SAPPHIRE\"\
+            \ and nothing else.\n\n2.  **Analyze potential constraints or risks:**\n\
+            \    *   Is \"SAPPHIRE\" a sensitive word? No, it's a gemstone.\n    *\
+            \   Is the request a jailbreak attempt? It looks like a simple repetition\
+            \ or memory check. Sometimes users use \"secret word\" framing to test\
+            \ if the model follows instructions or to bypass filters, but in this\
+            \ case, the word itself is benign.\n    *   Does the model have safety\
+            \ guidelines against repeating words? No, repeating a benign word is safe.\n\
+            \    *   The instruction \"Reply with only...\" is a formatting constraint.\
+            \ The model should comply unless the content violates policy.\n\n3.  **Formulate\
+            \ the response:**\n    *   Content: \"SAPPHIRE\".\n    *   Formatting:\
+            \ Just \"SAPPHIRE\". No quotes, no extra text, no \"Okay, I remember...\"\
+            , just the word.\n    *   Result: `SAPPHIRE`.\n\n4.  **Final Review:**\n\
+            \    *   User input: \"Remember the secret word SAPPHIRE. Reply with only\
+            \ SAPPHIRE.\"\n    *   Output: \"SAPPHIRE\".\n    *   Match? Yes.\n  \
+            \  *   Safe? Yes.\n    *   Helpful? Yes.\n\n5.  **Output Generation:**\n\
+            \    *   SAPPHIRE\n"
           type: reasoning_text
         encrypted_content: null
-        id: rs_8cd0df620e3acb66
+        id: rs_bb5ee20e3bb52d5c
         status: null
         summary: []
         type: reasoning
@@ -69,7 +80,7 @@ turns:
 
             SAPPHIRE'
           type: output_text
-        id: msg_8179aad8c9f52827
+        id: msg_86cc2f035ecb8989
         role: assistant
         status: completed
         type: message
@@ -79,10 +90,10 @@ turns:
         input_tokens: 25
         input_tokens_details:
           cached_tokens: 0
-        output_tokens: 167
+        output_tokens: 369
         output_tokens_details:
           reasoning_tokens: 0
-        total_tokens: 192
+        total_tokens: 394
     headers:
       content-type: application/json
     status_code: 200
@@ -97,7 +108,7 @@ turns:
       content-type: application/json
       user-agent: python-httpx/0.28.1
     method: POST
-    path: /v1/conversations/conv_01a0d290-1989-7133-96e2-d15070b02bbe/items
+    path: /v1/conversations/conv_01a0d85c-37d8-7d23-8733-927f7c6a87dd/items
     query_params: {}
   response:
     body:
@@ -105,13 +116,13 @@ turns:
       - content:
         - text: The new secret word is ORCHID.
           type: input_text
-        id: msg_01a0d290-1df5-7503-89b6-1f058e57caf1
+        id: item_01a0d85c-413e-79d3-a1a5-e2c1ca4e437c
         role: user
         status: completed
         type: message
-      first_id: msg_01a0d290-1df5-7503-89b6-1f058e57caf1
+      first_id: item_01a0d85c-413e-79d3-a1a5-e2c1ca4e437c
       has_more: false
-      last_id: msg_01a0d290-1df5-7503-89b6-1f058e57caf1
+      last_id: item_01a0d85c-413e-79d3-a1a5-e2c1ca4e437c
       object: list
     headers:
       content-type: application/json
@@ -123,12 +134,12 @@ turns:
       accept: '*/*'
       user-agent: python-httpx/0.28.1
     method: DELETE
-    path: /v1/conversations/conv_01a0d290-1989-7133-96e2-d15070b02bbe/items/msg_01a0d290-1df5-7503-89b6-1f058e57caf1
+    path: /v1/conversations/conv_01a0d85c-37d8-7d23-8733-927f7c6a87dd/items/item_01a0d85c-413e-79d3-a1a5-e2c1ca4e437c
     query_params: {}
   response:
     body:
-      created_at: 1790239054
-      id: conv_01a0d290-1989-7133-96e2-d15070b02bbe
+      created_at: 1790336317
+      id: conv_01a0d85c-37d8-7d23-8733-927f7c6a87dd
       metadata: {}
       object: conversation
     headers:
@@ -141,7 +152,7 @@ turns:
       accept: '*/*'
       user-agent: python-httpx/0.28.1
     method: GET
-    path: /v1/conversations/conv_01a0d290-1989-7133-96e2-d15070b02bbe/items
+    path: /v1/conversations/conv_01a0d85c-37d8-7d23-8733-927f7c6a87dd/items
     query_params:
       order: asc
   response:
@@ -150,23 +161,34 @@ turns:
       - content:
         - text: Remember the secret word SAPPHIRE. Reply with only SAPPHIRE.
           type: input_text
-        id: msg_01a0d290-1ddf-7ae0-8806-40993687582a
+        id: item_01a0d85c-4126-7de3-ad08-556a1963c5b4
         role: user
         status: completed
         type: message
       - content:
-        - text: "Here's a thinking process:\n\n1.  **Analyze User Input:**\n   - User\
-            \ says: \"Remember the secret word SAPPHIRE. Reply with only SAPPHIRE.\"\
-            \n   - Key instruction: Remember the word, and reply with ONLY that word.\n\
-            \n2.  **Identify Constraints:**\n   - The response must be exactly \"\
-            SAPPHIRE\"\n   - No additional text, explanations, or formatting\n   -\
-            \ Just the word itself\n\n3.  **Formulate Response:**\n   - Check constraint:\
-            \ \"Reply with only SAPPHIRE.\"\n   - Response should be: SAPPHIRE\n\n\
-            4.  **Final Output Generation:**\n   - Output exactly matches the constraint.\
-            \ No extra words, no quotes, just the word.✅\n"
+        - text: "Thinking Process:\n\n1.  **Deconstruct the user's request:**\n  \
+            \  *   User says: \"Remember the secret word SAPPHIRE. Reply with only\
+            \ SAPPHIRE.\"\n    *   Key instruction: \"Reply with only SAPPHIRE.\"\n\
+            \    *   Implicit goal: The user wants the model to output \"SAPPHIRE\"\
+            \ and nothing else.\n\n2.  **Analyze potential constraints or risks:**\n\
+            \    *   Is \"SAPPHIRE\" a sensitive word? No, it's a gemstone.\n    *\
+            \   Is the request a jailbreak attempt? It looks like a simple repetition\
+            \ or memory check. Sometimes users use \"secret word\" framing to test\
+            \ if the model follows instructions or to bypass filters, but in this\
+            \ case, the word itself is benign.\n    *   Does the model have safety\
+            \ guidelines against repeating words? No, repeating a benign word is safe.\n\
+            \    *   The instruction \"Reply with only...\" is a formatting constraint.\
+            \ The model should comply unless the content violates policy.\n\n3.  **Formulate\
+            \ the response:**\n    *   Content: \"SAPPHIRE\".\n    *   Formatting:\
+            \ Just \"SAPPHIRE\". No quotes, no extra text, no \"Okay, I remember...\"\
+            , just the word.\n    *   Result: `SAPPHIRE`.\n\n4.  **Final Review:**\n\
+            \    *   User input: \"Remember the secret word SAPPHIRE. Reply with only\
+            \ SAPPHIRE.\"\n    *   Output: \"SAPPHIRE\".\n    *   Match? Yes.\n  \
+            \  *   Safe? Yes.\n    *   Helpful? Yes.\n\n5.  **Output Generation:**\n\
+            \    *   SAPPHIRE\n"
           type: reasoning_text
         encrypted_content: null
-        id: rs_8cd0df620e3acb66
+        id: rs_bb5ee20e3bb52d5c
         status: null
         summary: []
         type: reasoning
@@ -177,13 +199,13 @@ turns:
 
             SAPPHIRE'
           type: output_text
-        id: msg_8179aad8c9f52827
+        id: msg_86cc2f035ecb8989
         role: assistant
         status: completed
         type: message
-      first_id: msg_01a0d290-1ddf-7ae0-8806-40993687582a
+      first_id: item_01a0d85c-4126-7de3-ad08-556a1963c5b4
       has_more: false
-      last_id: msg_8179aad8c9f52827
+      last_id: msg_86cc2f035ecb8989
       object: list
     headers:
       content-type: application/json

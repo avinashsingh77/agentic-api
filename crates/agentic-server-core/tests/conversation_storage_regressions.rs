@@ -182,11 +182,12 @@ async fn insert_with_ids(
     pool: &agentic_core::storage::DbPool,
     id: &str,
     items: Vec<(String, String)>,
-) -> Result<(), sqlx::Error> {
+) -> agentic_core::storage::StoreResult<()> {
     let mut tx = pool.begin().await?;
     agentic_core::storage::models::conversation::lock_in_tx(&mut tx, id).await?;
     item_model::create_in_tx(&mut tx, items, Some(id)).await?;
-    tx.commit().await
+    tx.commit().await?;
+    Ok(())
 }
 
 #[tokio::test]
@@ -337,3 +338,155 @@ async fn item_operations_reject_another_tenant_and_another_conversations_cursor(
     );
     assert_eq!(store.rehydrate(&conv.conversation_id).await.unwrap().len(), 1);
 }
+
+#[tokio::test]
+async fn regression_invalid_item_id_rejects_entire_batch_before_writing() {
+    use agentic_core::storage::StorageError;
+
+    let store = test_store().await;
+    let conversation = store
+        .create_with_metadata_and_items(Some("default_tenant"), None, vec![])
+        .await
+        .unwrap();
+    let invalid = InOutItem::Input(
+        serde_json::from_value(json!({
+            "type":"message", "id":"item_wrongprefix", "role":"user", "content":"invalid"
+        }))
+        .unwrap(),
+    );
+    let error = store
+        .create_items(
+            "default_tenant",
+            &conversation.conversation_id,
+            vec![regression_message("valid"), invalid.clone()],
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(error, StorageError::InvalidItemId { param, .. } if param == "items[1].id"));
+    assert!(store.rehydrate(&conversation.conversation_id).await.unwrap().is_empty());
+    let error = store
+        .create_with_metadata_and_items(Some("default_tenant"), None, vec![invalid])
+        .await
+        .unwrap_err();
+    assert!(matches!(error, StorageError::InvalidItemId { param, .. } if param == "items[0].id"));
+}
+
+fn message_with_id(id: &str, text: &str) -> InOutItem {
+    InOutItem::Input(serde_json::from_value(json!({"type":"message", "id":id, "role":"user", "content":text})).unwrap())
+}
+
+#[tokio::test]
+async fn regression_database_rejects_duplicate_items_and_rolls_back_all_batches() {
+    use agentic_core::storage::StorageError;
+
+    let store = test_store().await;
+    let conversation = store
+        .create_with_metadata_and_items(
+            Some("default_tenant"),
+            None,
+            vec![message_with_id("msg_existing", "original")],
+        )
+        .await
+        .unwrap();
+    for conflict in ["msg_new_0", "msg_existing"] {
+        // More items than one INSERT permits: a conflict in the second SQL batch
+        // must roll back the earlier successful batch as well.
+        let mut items: Vec<_> = (0..250)
+            .map(|index| message_with_id(&format!("msg_new_{index}"), "new"))
+            .collect();
+        items.push(message_with_id(conflict, "conflict"));
+        let error = store
+            .create_items("default_tenant", &conversation.conversation_id, items)
+            .await
+            .unwrap_err();
+        if conflict == "msg_existing" {
+            assert!(error.is_validation());
+            assert!(matches!(error, StorageError::ItemAlreadyInConversation));
+        } else {
+            assert!(error.is_unique_violation());
+        }
+        let rows = store
+            .list_items(
+                "default_tenant",
+                &conversation.conversation_id,
+                300,
+                None,
+                ItemOrder::Asc,
+            )
+            .await
+            .unwrap();
+        assert_eq!(rows.len(), 1, "failed insertion must leave the history unchanged");
+        assert_eq!(rows[0].id, "msg_existing");
+        assert_eq!(rows[0].as_inout().unwrap(), message_with_id("msg_existing", "original"));
+    }
+    let created = store
+        .create_items(
+            "default_tenant",
+            &conversation.conversation_id,
+            vec![message_with_id("msg_new_0", "retry")],
+        )
+        .await
+        .unwrap();
+    assert_eq!(created[0].seq, Some(1));
+}
+
+#[tokio::test]
+async fn regression_duplicate_initial_items_roll_back_conversation_creation() {
+    let store = test_store().await;
+    let error = store
+        .create_with_metadata_and_items(
+            Some("default_tenant"),
+            None,
+            vec![
+                message_with_id("msg_duplicate", "first"),
+                message_with_id("msg_duplicate", "second"),
+            ],
+        )
+        .await
+        .unwrap_err();
+    assert!(error.is_unique_violation());
+    for query in ["SELECT COUNT(*) FROM conversations", "SELECT COUNT(*) FROM items"] {
+        let count: i64 = sqlx::query_scalar(query)
+            .fetch_one(store.pool().unwrap())
+            .await
+            .unwrap();
+        assert_eq!(count, 0);
+    }
+}
+
+#[tokio::test]
+async fn regression_concurrent_insert_checks_membership_under_the_conversation_lock() {
+    use agentic_core::storage::StorageError;
+
+    let store = test_store().await;
+    let conversation = store
+        .create_with_metadata_and_items(Some("default_tenant"), None, vec![])
+        .await
+        .unwrap();
+    let (first, second) = tokio::join!(
+        store.create_items(
+            "default_tenant",
+            &conversation.conversation_id,
+            vec![message_with_id("msg_race", "first")]
+        ),
+        store.create_items(
+            "default_tenant",
+            &conversation.conversation_id,
+            vec![message_with_id("msg_race", "second")]
+        ),
+    );
+    let (Ok(created), Err(error)) = (match (first, second) {
+        (first @ Ok(_), second) => (first, second),
+        (first, second) => (second, first),
+    }) else {
+        panic!("exactly one insert should succeed");
+    };
+    assert!(matches!(error, StorageError::ItemAlreadyInConversation));
+    let snapshot = store.rehydrate_snapshot(&conversation.conversation_id).await.unwrap();
+    assert_eq!(snapshot.items, vec![created[0].as_inout().unwrap()]);
+    assert_eq!(snapshot.version.last_sequence, Some(0));
+    assert_eq!(snapshot.version.revision, 1);
+}
+
+#[path = "conversations/item_references.rs"]
+mod item_references;

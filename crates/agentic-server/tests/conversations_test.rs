@@ -712,16 +712,16 @@ async fn test_create_items_rejects_empty_id() {
     assert_eq!(create_resp.status(), StatusCode::BAD_REQUEST);
     let error_body: serde_json::Value = create_resp.json().await.unwrap();
     assert_eq!(error_body["error"]["type"], "invalid_request_error");
-    assert!(
-        error_body["error"]["message"]
-            .as_str()
-            .unwrap()
-            .contains("empty string")
+    assert_eq!(error_body["error"]["code"], "invalid_value");
+    assert_eq!(error_body["error"]["param"], "items[0].id");
+    assert_eq!(
+        error_body["error"]["message"],
+        "Invalid 'items[0].id': ''. Expected an ID that begins with 'msg'."
     );
 }
 
 #[tokio::test]
-async fn test_create_items_rejects_duplicate_ids() {
+async fn test_create_items_rejects_item_already_in_conversation() {
     let (llm_url, _llm) = spawn_mock_llm().await;
     let state = test_state_with_storage(&llm_url).await;
     let (gw_url, _gateway) = spawn_gateway(state).await;
@@ -737,33 +737,45 @@ async fn test_create_items_rejects_duplicate_ids() {
     let conv_body: serde_json::Value = conv_resp.json().await.unwrap();
     let conv_id = conv_body["id"].as_str().unwrap();
 
-    // Try to create items with duplicate IDs
+    let items_url = format!("{gw_url}/v1/conversations/{conv_id}/items");
+    let original = client
+        .post(&items_url)
+        .json(&json!({"items": [{"role":"user", "content":"original"}]}))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json::<serde_json::Value>()
+        .await
+        .unwrap();
     let create_resp = client
-        .post(format!("{gw_url}/v1/conversations/{conv_id}/items"))
-        .json(&json!({
-            "items": [
-                {
-                    "type": "message",
-                    "id": "msg_duplicate",
-                    "role": "user",
-                    "content": "first"
-                },
-                {
-                    "type": "message",
-                    "id": "msg_duplicate",
-                    "role": "user",
-                    "content": "second"
-                }
-            ]
-        }))
+        .post(&items_url)
+        .json(&json!({"items": [
+            {"role":"user", "content":"must not be inserted"},
+            {"type":"message", "id":original["data"][0]["id"], "role":"user", "content":"replacement"}
+        ]}))
         .send()
         .await
         .unwrap();
-
     assert_eq!(create_resp.status(), StatusCode::BAD_REQUEST);
     let error_body: serde_json::Value = create_resp.json().await.unwrap();
-    assert_eq!(error_body["error"]["type"], "invalid_request_error");
-    assert!(error_body["error"]["message"].as_str().unwrap().contains("duplicate"));
+    assert_eq!(
+        error_body,
+        json!({"error": {
+            "type":"invalid_request_error", "code":"item_already_in_conversation",
+            "param":"items", "message":"Item already in conversation"
+        }})
+    );
+    let listed = client
+        .get(&items_url)
+        .send()
+        .await
+        .unwrap()
+        .json::<serde_json::Value>()
+        .await
+        .unwrap();
+    assert_eq!(listed["data"], original["data"]);
 }
 
 #[path = "conversations/regressions.rs"]

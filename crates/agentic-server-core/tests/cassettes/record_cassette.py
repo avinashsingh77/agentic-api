@@ -20,7 +20,7 @@ Modes:
   responses   No conversation created. Chains turns purely via
               previous_response_id. Supports --openai, --vllm, and --gateway backends.
   items       Records flat conversation/item API steps. Select --items-scenario
-              continuation, deletion, branch, or pagination.
+              continuation, deletion, branch, pagination, or edge-cases.
 
 Usage:
     python tests/cassettes/record_cassette.py --turns 2 --no-stream --output path/to/cassette.yaml
@@ -350,10 +350,76 @@ def _item_response(
     return result
 
 
+def _record_duplicate_items(
+    client: httpx.Client, proxy_url: str, source_items_path: str, item_id: str
+) -> None:
+    """Probe generated-ID reuse and duplication without assuming acceptance."""
+    first = {"type": "message", "id": item_id, "role": "user",
+             "content": "Duplicate ID probe: first copy."}
+    second = {**first, "content": "Duplicate ID probe: second copy."}
+    # A single-copy control distinguishes rejection of cross-conversation ID
+    # reuse from rejection caused specifically by duplicates within a request.
+    for items in ([first], [first, second]):
+        conversation = _create_conversation(client, proxy_url)
+        items_path = f"/v1/conversations/{conversation}/items"
+        _item_request(client, proxy_url, "POST", items_path,
+                      body={"items": items}, expected_status=None)
+        _item_request(client, proxy_url, "GET", items_path, params={"order": "asc"})
+    _item_request(client, proxy_url, "POST", source_items_path,
+                  body={"items": [first]}, expected_status=None)
+    _item_request(client, proxy_url, "GET", source_items_path, params={"order": "asc"})
+
+
 def run_items(
     client: httpx.Client, proxy_url: str, model: str, scenario: str, stream: bool
 ) -> None:
     """Record each conversation or item API request as its own numbered step."""
+    if scenario == "edge-cases":
+        for item in (
+            {
+                "type": "message",
+                "id": f"item_wrongprefix_{secrets.token_hex(8)}",
+                "role": "user",
+                "content": "test",
+            },
+            {
+                "type": "function_call",
+                "id": f"msg_wrongprefix_{secrets.token_hex(8)}",
+                "call_id": "call_prefix_probe",
+                "name": "test_fn",
+                "arguments": "{}",
+            },
+        ):
+            probe_conversation = _create_conversation(client, proxy_url)
+            probe_items_path = f"/v1/conversations/{probe_conversation}/items"
+            _item_request(
+                client, proxy_url, "POST", probe_items_path,
+                body={"items": [item]}, expected_status=None,
+            )
+            _item_request(client, proxy_url, "GET", probe_items_path)
+
+        cursor_conversation = _create_conversation(client, proxy_url)
+        cursor_items_path = f"/v1/conversations/{cursor_conversation}/items"
+        _item_request(
+            client, proxy_url, "POST", cursor_items_path,
+            body={"items": [
+                {"type": "message", "role": "user", "content": f"msg{i}"}
+                for i in range(1, 4)
+            ]},
+        )
+        page = _item_request(client, proxy_url, "GET", cursor_items_path, params={"limit": 2})
+        if len(page.get("data", [])) != 2 or not page.get("last_id"):
+            raise RuntimeError(f"expected a two-item page with last_id: {page}")
+        cursor = page["last_id"]
+        _item_request(client, proxy_url, "DELETE", f"{cursor_items_path}/{cursor}")
+        _item_request(
+            client, proxy_url, "GET", cursor_items_path,
+            params={"after": cursor, "limit": 2}, expected_status=None,
+        )
+        # The first item on the page survived deletion; reuse its real public ID.
+        _record_duplicate_items(client, proxy_url, cursor_items_path, page["data"][0]["id"])
+        return
+
     conv_id = _create_conversation(client, proxy_url)
     items_path = f"/v1/conversations/{conv_id}/items"
 
@@ -1428,7 +1494,7 @@ def run_responses(
 )
 @click.option(
     "--items-scenario",
-    type=click.Choice(["continuation", "branch", "deletion", "pagination"]),
+    type=click.Choice(["continuation", "branch", "deletion", "pagination", "edge-cases"]),
     default="continuation",
     help="Conversation item recording scenario (for --mode items).",
 )
@@ -1618,7 +1684,9 @@ def main(
 ) -> None:
     """Interactive multi-turn cassette recorder (proxy embedded)."""
     if mode == "items":
-        expected_turns = 10 if items_scenario == "pagination" else 6 if items_scenario == "branch" else 5
+        expected_turns = (10 if items_scenario == "pagination" else
+                          6 if items_scenario == "branch" else
+                          19 if items_scenario == "edge-cases" else 5)
         if turns != expected_turns:
             raise click.UsageError(
                 f"--mode items --items-scenario {items_scenario} requires --turns {expected_turns}."

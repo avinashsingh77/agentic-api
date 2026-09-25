@@ -195,7 +195,7 @@ impl ConversationStore {
     ) -> StoreResult<()> {
         let pool = self.pool()?;
 
-        let items_ = item::serialize_new_items(new_items)?;
+        let items_ = item::serialize_new_items(new_items, item::ItemSource::ResponseHistory)?;
         let metadata_json = String::try_from(metadata)?;
 
         let mut tx = pool.begin().await?;
@@ -251,7 +251,7 @@ impl ConversationStore {
         metadata: Option<ConversationMetadata>,
         initial_items: Vec<InOutItem>,
     ) -> StoreResult<ConversationData> {
-        let items = item::serialize_new_items(initial_items)?;
+        let items = item::serialize_new_items(initial_items, item::ItemSource::ConversationApi)?;
         let metadata = metadata.map(|value| serialize_to_string(&value)).transpose()?;
         let id = uuid7_str("conv_");
         let mut tx = self.pool()?.begin().await?;
@@ -310,7 +310,7 @@ impl ConversationStore {
     /// # Errors
     /// Returns an error if the resource is missing or persistence fails.
     pub async fn create_items(&self, tenant_id: &str, id: &str, items: Vec<InOutItem>) -> StoreResult<Vec<Item>> {
-        let items = item::serialize_new_items(items)?;
+        let items = item::serialize_new_items(items, item::ItemSource::ConversationApi)?;
         let mut tx = self.pool()?.begin().await?;
         lock_owned(&mut tx, tenant_id, id).await?;
         let rows = item::create_in_tx(&mut tx, items, Some(id)).await?;
@@ -337,7 +337,7 @@ impl ConversationStore {
         item::list_for_conversation(self.pool()?, tenant_id, id, limit, after, order)
             .await
             .map_err(|error| match (error, after) {
-                (sqlx::Error::RowNotFound, Some(cursor)) => StorageError::not_found("Conversation item", cursor),
+                (sqlx::Error::RowNotFound, Some(cursor)) => StorageError::ItemCursorNotFound { id: cursor.to_owned() },
                 (other, _) => other.into(),
             })
     }
