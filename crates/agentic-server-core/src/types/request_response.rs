@@ -98,8 +98,8 @@ pub struct RequestPayload<T: ?Sized = ResponseTextConfig> {
     pub input: ResponsesInput,
     pub instructions: Option<String>,
     pub previous_response_id: Option<String>,
-    #[serde(alias = "conversation")]
-    pub conversation_id: Option<String>,
+    #[serde(alias = "conversation_id")]
+    pub conversation: Option<String>,
     pub tools: Option<Vec<ResponsesTool>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_choice: Option<ToolChoice>,
@@ -216,8 +216,8 @@ impl<T: ?Sized> RequestPayload<T> {
         if self.multi_agent.as_ref().is_some_and(|config| config.enabled) {
             return Some("multi_agent");
         }
-        if self.conversation_id.is_some() {
-            return Some("conversation_id");
+        if self.conversation.is_some() {
+            return Some("conversation");
         }
         if self
             .tools
@@ -255,7 +255,7 @@ impl<T: ?Sized> RequestPayload<T> {
             input: self.input,
             instructions: self.instructions,
             previous_response_id: self.previous_response_id,
-            conversation_id: self.conversation_id,
+            conversation: self.conversation,
             tools: self.tools,
             tool_choice: self.tool_choice,
             stream: self.stream,
@@ -424,7 +424,7 @@ pub struct ResponsePayload {
     pub incomplete_details: Option<IncompleteDetails>,
     pub error: Option<Value>,
     pub previous_response_id: Option<String>,
-    pub conversation_id: Option<String>,
+    pub conversation: Option<String>,
     pub instructions: Option<String>,
     /// The request's `max_tool_calls`, always echoed (`null` when unset). Never inherited.
     #[serde(default)]
@@ -577,8 +577,18 @@ mod tests {
             "model": "test-model", "input": "hello", "conversation": "conv_test"
         }))
         .expect("OpenAI conversation field should deserialize");
-        assert_eq!(request.conversation_id.as_deref(), Some("conv_test"));
-        assert_eq!(request.in_process_feature(), Some("conversation_id"));
+        assert_eq!(request.conversation.as_deref(), Some("conv_test"));
+        assert_eq!(request.in_process_feature(), Some("conversation"));
+    }
+
+    #[test]
+    fn request_payload_accepts_conversation_id_alias() {
+        let request: RequestPayload = serde_json::from_value(serde_json::json!({
+            "model": "test-model", "input": "hello", "conversation_id": "conv_alias"
+        }))
+        .expect("conversation_id alias should deserialize");
+        assert_eq!(request.conversation.as_deref(), Some("conv_alias"));
+        assert_eq!(request.in_process_feature(), Some("conversation"));
     }
 
     #[test]
@@ -1319,7 +1329,7 @@ mod tests {
             incomplete_details: None,
             error: None,
             previous_response_id: None,
-            conversation_id: None,
+            conversation: None,
             instructions: None,
             max_tool_calls: None,
             service_tier: None,
@@ -1358,7 +1368,7 @@ mod tests {
             incomplete_details: None,
             error: None,
             previous_response_id: None,
-            conversation_id: None,
+            conversation: None,
             instructions: None,
             max_tool_calls: None,
             service_tier: None,
@@ -1388,7 +1398,7 @@ mod tests {
             incomplete_details: None,
             error: None,
             previous_response_id: None,
-            conversation_id: None,
+            conversation: None,
             instructions: None,
             max_tool_calls: None,
             service_tier: None,
