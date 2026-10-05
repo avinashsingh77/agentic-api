@@ -13,7 +13,10 @@ mod max_tool_calls;
 mod response_stream;
 mod serde_helpers;
 pub use max_tool_calls::{JsonKind, MAX_TOOL_CALLS_PARAM, MaxToolCalls, MaxToolCallsError, OutOfRangeInteger};
-use serde_helpers::{default_true, is_absent_or_default_tool_choice, serialize_upstream_tool_choice};
+use serde_helpers::{
+    default_true, deserialize_conversation, is_absent_or_default_tool_choice, serialize_conversation_object,
+    serialize_upstream_tool_choice,
+};
 #[cfg(feature = "openapi")]
 mod schema;
 
@@ -98,7 +101,7 @@ pub struct RequestPayload<T: ?Sized = ResponseTextConfig> {
     pub input: ResponsesInput,
     pub instructions: Option<String>,
     pub previous_response_id: Option<String>,
-    #[serde(alias = "conversation_id")]
+    #[serde(default, alias = "conversation_id", deserialize_with = "deserialize_conversation")]
     pub conversation: Option<String>,
     pub tools: Option<Vec<ResponsesTool>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -424,6 +427,11 @@ pub struct ResponsePayload {
     pub incomplete_details: Option<IncompleteDetails>,
     pub error: Option<Value>,
     pub previous_response_id: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_conversation",
+        serialize_with = "serialize_conversation_object"
+    )]
     pub conversation: Option<String>,
     pub instructions: Option<String>,
     /// The request's `max_tool_calls`, always echoed (`null` when unset). Never inherited.
@@ -589,6 +597,77 @@ mod tests {
         .expect("conversation_id alias should deserialize");
         assert_eq!(request.conversation.as_deref(), Some("conv_alias"));
         assert_eq!(request.in_process_feature(), Some("conversation"));
+    }
+
+    #[test]
+    fn request_payload_accepts_conversation_object_form() {
+        let request: RequestPayload = serde_json::from_value(serde_json::json!({
+            "model": "test-model", "input": "hello", "conversation": { "id": "conv_object" }
+        }))
+        .expect("conversation object form should deserialize");
+        assert_eq!(request.conversation.as_deref(), Some("conv_object"));
+        assert_eq!(request.in_process_feature(), Some("conversation"));
+    }
+
+    #[test]
+    fn request_payload_accepts_conversation_id_object_form() {
+        let request: RequestPayload = serde_json::from_value(serde_json::json!({
+            "model": "test-model", "input": "hello", "conversation_id": { "id": "conv_id_object" }
+        }))
+        .expect("conversation_id alias with object form should deserialize");
+        assert_eq!(request.conversation.as_deref(), Some("conv_id_object"));
+        assert_eq!(request.in_process_feature(), Some("conversation"));
+    }
+
+    #[test]
+    fn response_payload_serializes_conversation_as_object() {
+        let payload = ResponsePayload {
+            id: "resp_test".to_string(),
+            object: "response".to_string(),
+            created_at: 0,
+            model: "test-model".to_string(),
+            status: "completed".to_string(),
+            output: Vec::new(),
+            usage: None,
+            incomplete_details: None,
+            error: None,
+            previous_response_id: None,
+            conversation: Some("conv_123".to_string()),
+            instructions: None,
+            service_tier: None,
+            tools: None,
+            tool_choice: None,
+            max_tool_calls: None,
+        };
+
+        let json = serde_json::to_value(&payload).expect("response should serialize");
+        assert_eq!(json["conversation"]["id"], "conv_123");
+        assert!(json["conversation"].is_object());
+    }
+
+    #[test]
+    fn response_payload_serializes_null_conversation() {
+        let payload = ResponsePayload {
+            id: "resp_test".to_string(),
+            object: "response".to_string(),
+            created_at: 0,
+            model: "test-model".to_string(),
+            status: "completed".to_string(),
+            output: Vec::new(),
+            usage: None,
+            incomplete_details: None,
+            error: None,
+            previous_response_id: None,
+            conversation: None,
+            instructions: None,
+            service_tier: None,
+            tools: None,
+            max_tool_calls: None,
+            tool_choice: None,
+        };
+
+        let json = serde_json::to_value(&payload).expect("response should serialize");
+        assert!(json["conversation"].is_null());
     }
 
     #[test]

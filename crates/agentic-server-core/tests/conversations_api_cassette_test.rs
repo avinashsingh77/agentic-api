@@ -252,13 +252,11 @@ fn response_shape(body: &Value, has_conversation: bool) -> Value {
         "output": outputs,
     });
     if has_conversation {
-        // Handle both conversation and conversation_id for compatibility during transition
+        // Normalize to object form { "id": "..." } to match OpenAI's shape
         result["conversation"] = if body["conversation"].is_object() {
-            body["conversation"]["id"].clone()
-        } else if !body["conversation"].is_null() {
             body["conversation"].clone()
-        } else if !body["conversation_id"].is_null() {
-            body["conversation_id"].clone()
+        } else if let Some(conv_id) = body["conversation"].as_str() {
+            json!({"id": conv_id})
         } else {
             Value::Null
         };
