@@ -414,7 +414,6 @@ pub struct IncompleteDetails {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ResponsePayload {
     pub id: String,
     pub object: String,
