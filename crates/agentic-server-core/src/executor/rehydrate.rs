@@ -255,14 +255,14 @@ fn validate_multi_agent_request(request: &RequestPayload) -> ExecutorResult<()> 
 ///
 /// Loads the stored response, rehydrates its history items, resolves effective
 /// tools and tool choice from the stored metadata, and prepends the history to
-/// the enriched request input.
+/// the enriched request input. The new response is independent of any conversation
+/// associated with its parent.
 async fn from_response(ctx: &mut RequestContext, exec_ctx: &ExecutionContext) -> ExecutorResult<()> {
     if ctx.continuation.is_some() {
         return from_session_response(ctx, exec_ctx).await;
     }
     let stored = exec_ctx.resp_handler.get(ctx).await?;
     if restore_agent_tree(ctx, &stored.metadata, exec_ctx.responses_config.max_retained_bytes)? {
-        ctx.conversation_id = stored.conversation_id;
         return Ok(());
     }
     let history = exec_ctx.resp_handler.rehydrate(ctx).await?;
@@ -279,7 +279,6 @@ async fn from_response(ctx: &mut RequestContext, exec_ctx: &ExecutionContext) ->
     ctx.enriched_request.previous_response_id = None;
     ctx.enriched_request.input = ResponsesInput::Items(items);
     apply_effective_settings(ctx, &stored.metadata);
-    ctx.conversation_id = stored.conversation_id;
     Ok(())
 }
 
@@ -318,7 +317,6 @@ async fn from_session_response(ctx: &mut RequestContext, exec_ctx: &ExecutionCon
         std::sync::Arc::new(continuation.retain_parent(checkpoint)?)
     };
     if restore_agent_tree(ctx, &parent.metadata, exec_ctx.responses_config.max_retained_bytes)? {
-        ctx.conversation_id.clone_from(&parent.conversation_id);
         if let Some(continuation) = ctx.continuation.as_mut() {
             continuation.parent = Some(parent);
         }
@@ -346,7 +344,6 @@ async fn from_session_response(ctx: &mut RequestContext, exec_ctx: &ExecutionCon
         &parent.metadata.effective_tool_choice,
         ctx.original_request.tool_choice.is_some(),
     ));
-    ctx.conversation_id.clone_from(&parent.conversation_id);
     if let Some(continuation) = ctx.continuation.as_mut() {
         continuation.parent = Some(parent);
     }

@@ -11,8 +11,8 @@ turns:
     query_params: {}
   response:
     body:
-      created_at: 1791450073
-      id: conv_01a11abe-cb05-7d02-a839-f7ab31c7715c
+      created_at: 1791528815
+      id: conv_01a11f70-4d0d-7f43-a7dc-4335ec4cc196
       metadata: {}
       object: conversation
     headers:
@@ -21,7 +21,7 @@ turns:
 - filename: t2
   request:
     body:
-      conversation: conv_01a11abe-cb05-7d02-a839-f7ab31c7715c
+      conversation: conv_01a11f70-4d0d-7f43-a7dc-4335ec4cc196
       input:
       - content: Remember the secret word SAPPHIRE. Reply with only SAPPHIRE.
         role: user
@@ -38,10 +38,10 @@ turns:
   response:
     body:
       conversation:
-        id: conv_01a11abe-cb05-7d02-a839-f7ab31c7715c
-      created_at: 1791450075
+        id: conv_01a11f70-4d0d-7f43-a7dc-4335ec4cc196
+      created_at: 1791528817
       error: null
-      id: resp_01a11abe-cb0f-7492-a4ef-48568148508b
+      id: resp_01a11f70-4d16-7fd1-ab8d-adc4974cd90c
       incomplete_details: null
       instructions: null
       max_tool_calls: null
@@ -51,18 +51,17 @@ turns:
       - content:
         - text: "Here's a thinking process:\n\n1.  **Analyze User Input:**\n   - User\
             \ says: \"Remember the secret word SAPPHIRE. Reply with only SAPPHIRE.\"\
-            \n   - Key instruction: Reply with *only* \"SAPPHIRE\".\n   - No additional\
-            \ text, explanations, or formatting should be included.\n\n2.  **Identify\
-            \ Constraints:**\n   - The response must be exactly \"SAPPHIRE\".\n  \
-            \ - Nothing else should be outputted.\n\n3.  **Formulate Response:**\n\
-            \   - Just the word: SAPPHIRE\n   - Check against constraints: Matches\
-            \ exactly, no extra text.\n\n4.  **Final Output Generation:**\n   - Output:\
-            \ SAPPHIRE\n   - Self-Correction/Verification during thought: The prompt\
-            \ is straightforward. It's a common test/injection prompt to see if the\
-            \ model follows exact instructions. I will comply strictly.✅\n"
+            \n   - Key instruction: \"Reply with only SAPPHIRE.\"\n   - The word to\
+            \ remember is \"SAPPHIRE\" (all caps).\n\n2.  **Identify Constraints:**\n\
+            \   - Must reply with ONLY the word \"SAPPHIRE\"\n   - No additional text,\
+            \ explanations, or formatting beyond that exact word.\n\n3.  **Check Compliance:**\n\
+            \   - Does the output contain anything other than \"SAPPHIRE\"? No.\n\
+            \   - Is it exactly as requested? Yes.\n\n4.  **Formulate Response:**\n\
+            \   - SAPPHIRE\n\n5.  **Final Verification:**\n   - Matches constraint\
+            \ exactly. Ready.✅\n"
           type: reasoning_text
         encrypted_content: null
-        id: rs_bda4504c4de7d527
+        id: rs_b43b84c54307c5a0
         summary: []
         type: reasoning
       - content:
@@ -72,7 +71,7 @@ turns:
 
             SAPPHIRE'
           type: output_text
-        id: msg_a353d63d4c2485d1
+        id: msg_a6153f624f377072
         role: assistant
         status: completed
         type: message
@@ -83,10 +82,10 @@ turns:
         input_tokens: 25
         input_tokens_details:
           cached_tokens: 0
-        output_tokens: 201
+        output_tokens: 188
         output_tokens_details:
           reasoning_tokens: 0
-        total_tokens: 226
+        total_tokens: 213
     headers:
       content-type: application/json
     status_code: 200
@@ -101,7 +100,7 @@ turns:
       content-type: application/json
       user-agent: python-httpx/0.28.1
     method: POST
-    path: /v1/conversations/conv_01a11abe-cb05-7d02-a839-f7ab31c7715c/items
+    path: /v1/conversations/conv_01a11f70-4d0d-7f43-a7dc-4335ec4cc196/items
     query_params: {}
   response:
     body:
@@ -109,13 +108,13 @@ turns:
       - content:
         - text: The new secret word is ORCHID.
           type: input_text
-        id: msg_01a11abe-d045-7f41-9b5f-ba8159ebe1b3
+        id: msg_01a11f70-51fe-75f3-b6f5-e02afa134155
         role: user
         status: completed
         type: message
-      first_id: msg_01a11abe-d045-7f41-9b5f-ba8159ebe1b3
+      first_id: msg_01a11f70-51fe-75f3-b6f5-e02afa134155
       has_more: false
-      last_id: msg_01a11abe-d045-7f41-9b5f-ba8159ebe1b3
+      last_id: msg_01a11f70-51fe-75f3-b6f5-e02afa134155
       object: list
     headers:
       content-type: application/json
@@ -127,12 +126,12 @@ turns:
       accept: '*/*'
       user-agent: python-httpx/0.28.1
     method: DELETE
-    path: /v1/conversations/conv_01a11abe-cb05-7d02-a839-f7ab31c7715c/items/msg_01a11abe-d045-7f41-9b5f-ba8159ebe1b3
+    path: /v1/conversations/conv_01a11f70-4d0d-7f43-a7dc-4335ec4cc196/items/msg_01a11f70-51fe-75f3-b6f5-e02afa134155
     query_params: {}
   response:
     body:
-      created_at: 1791450073
-      id: conv_01a11abe-cb05-7d02-a839-f7ab31c7715c
+      created_at: 1791528815
+      id: conv_01a11f70-4d0d-7f43-a7dc-4335ec4cc196
       metadata: {}
       object: conversation
     headers:
@@ -145,7 +144,7 @@ turns:
       accept: '*/*'
       user-agent: python-httpx/0.28.1
     method: GET
-    path: /v1/conversations/conv_01a11abe-cb05-7d02-a839-f7ab31c7715c/items
+    path: /v1/conversations/conv_01a11f70-4d0d-7f43-a7dc-4335ec4cc196/items
     query_params:
       order: asc
   response:
@@ -154,25 +153,24 @@ turns:
       - content:
         - text: Remember the secret word SAPPHIRE. Reply with only SAPPHIRE.
           type: input_text
-        id: msg_01a11abe-d02f-7ef3-9566-36e8cd34886e
+        id: msg_01a11f70-51e7-7461-9dc1-27f0f6fecdd8
         role: user
         status: completed
         type: message
       - content:
         - text: "Here's a thinking process:\n\n1.  **Analyze User Input:**\n   - User\
             \ says: \"Remember the secret word SAPPHIRE. Reply with only SAPPHIRE.\"\
-            \n   - Key instruction: Reply with *only* \"SAPPHIRE\".\n   - No additional\
-            \ text, explanations, or formatting should be included.\n\n2.  **Identify\
-            \ Constraints:**\n   - The response must be exactly \"SAPPHIRE\".\n  \
-            \ - Nothing else should be outputted.\n\n3.  **Formulate Response:**\n\
-            \   - Just the word: SAPPHIRE\n   - Check against constraints: Matches\
-            \ exactly, no extra text.\n\n4.  **Final Output Generation:**\n   - Output:\
-            \ SAPPHIRE\n   - Self-Correction/Verification during thought: The prompt\
-            \ is straightforward. It's a common test/injection prompt to see if the\
-            \ model follows exact instructions. I will comply strictly.✅\n"
+            \n   - Key instruction: \"Reply with only SAPPHIRE.\"\n   - The word to\
+            \ remember is \"SAPPHIRE\" (all caps).\n\n2.  **Identify Constraints:**\n\
+            \   - Must reply with ONLY the word \"SAPPHIRE\"\n   - No additional text,\
+            \ explanations, or formatting beyond that exact word.\n\n3.  **Check Compliance:**\n\
+            \   - Does the output contain anything other than \"SAPPHIRE\"? No.\n\
+            \   - Is it exactly as requested? Yes.\n\n4.  **Formulate Response:**\n\
+            \   - SAPPHIRE\n\n5.  **Final Verification:**\n   - Matches constraint\
+            \ exactly. Ready.✅\n"
           type: reasoning_text
         encrypted_content: null
-        id: rs_bda4504c4de7d527
+        id: rs_b43b84c54307c5a0
         summary: []
         type: reasoning
       - content:
@@ -182,13 +180,13 @@ turns:
 
             SAPPHIRE'
           type: output_text
-        id: msg_a353d63d4c2485d1
+        id: msg_a6153f624f377072
         role: assistant
         status: completed
         type: message
-      first_id: msg_01a11abe-d02f-7ef3-9566-36e8cd34886e
+      first_id: msg_01a11f70-51e7-7461-9dc1-27f0f6fecdd8
       has_more: false
-      last_id: msg_a353d63d4c2485d1
+      last_id: msg_a6153f624f377072
       object: list
     headers:
       content-type: application/json

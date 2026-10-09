@@ -429,7 +429,8 @@ pub struct ResponsePayload {
     #[serde(
         default,
         deserialize_with = "deserialize_conversation",
-        serialize_with = "serialize_conversation_object"
+        serialize_with = "serialize_conversation_object",
+        skip_serializing_if = "Option::is_none"
     )]
     pub conversation: Option<String>,
     pub instructions: Option<String>,
@@ -645,7 +646,7 @@ mod tests {
     }
 
     #[test]
-    fn response_payload_serializes_null_conversation() {
+    fn response_payload_omits_absent_conversation() {
         let payload = ResponsePayload {
             id: "resp_test".to_string(),
             object: "response".to_string(),
@@ -666,7 +667,7 @@ mod tests {
         };
 
         let json = serde_json::to_value(&payload).expect("response should serialize");
-        assert!(json["conversation"].is_null());
+        assert!(json.get("conversation").is_none());
     }
 
     #[test]

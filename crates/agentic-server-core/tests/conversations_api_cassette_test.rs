@@ -162,14 +162,14 @@ fn sse_events(response: &RecordedResponse) -> Vec<Value> {
     events
 }
 
-fn assert_sse_conversation_shapes(response: &RecordedResponse, location: &str) {
+fn assert_sse_conversation_shapes(response: &RecordedResponse, has_conversation: bool, location: &str) {
     let events = sse_events(response);
     for (i, event) in events.iter().enumerate() {
         let event_type = event["type"].as_str().unwrap_or_default();
         // Check all events that carry a response object
         if event_type.starts_with("response.") && event.get("response").is_some() {
             let event_location = format!("{location} SSE event {i} ({event_type})");
-            assert_conversation_object_shape(&event["response"], &event_location);
+            assert_conversation_object_shape(&event["response"], has_conversation, &event_location);
         }
     }
 }
@@ -248,7 +248,13 @@ fn list_shape(body: &Value) -> Value {
     })
 }
 
-fn assert_conversation_object_shape(body: &Value, location: &str) {
+fn assert_conversation_object_shape(body: &Value, has_conversation: bool, location: &str) {
+    if !has_conversation {
+        assert!(
+            body.get("conversation").is_none(),
+            "{location}: a previous-response branch must not return conversation"
+        );
+    }
     // Assert conversation is an object with id field, never a string
     if !body["conversation"].is_null() {
         assert!(
@@ -339,18 +345,15 @@ fn compare_recordings(name: &str, openai: &Cassette, gateway: &Cassette) {
         if a.request.path == "/v1/responses" && a.response.status_code == 200 {
             let has_conversation =
                 a.request.body.get("conversation").is_some() || a.request.body.get("conversation_id").is_some();
-            if has_conversation {
-                if a.response.sse.is_some() {
-                    // Check all SSE events with response fields
-                    assert_sse_conversation_shapes(&a.response, &format!("{location} (OpenAI)"));
-                    assert_sse_conversation_shapes(&b.response, &format!("{location} (gateway)"));
-                } else {
-                    // Check JSON response bodies
-                    let a_body = a.response.body.as_ref().expect("response body");
-                    let b_body = b.response.body.as_ref().expect("response body");
-                    assert_conversation_object_shape(a_body, &format!("{location} (OpenAI)"));
-                    assert_conversation_object_shape(b_body, &format!("{location} (gateway)"));
-                }
+            if a.response.sse.is_some() {
+                // Check every response object, including previous-response branches.
+                assert_sse_conversation_shapes(&a.response, has_conversation, &format!("{location} (OpenAI)"));
+                assert_sse_conversation_shapes(&b.response, has_conversation, &format!("{location} (gateway)"));
+            } else {
+                let a_body = a.response.body.as_ref().expect("response body");
+                let b_body = b.response.body.as_ref().expect("response body");
+                assert_conversation_object_shape(a_body, has_conversation, &format!("{location} (OpenAI)"));
+                assert_conversation_object_shape(b_body, has_conversation, &format!("{location} (gateway)"));
             }
         }
 
